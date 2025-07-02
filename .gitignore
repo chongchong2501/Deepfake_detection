@@ -1,0 +1,59 @@
+# 数据集文件
+data/
+*.zip
+*.mp4
+*.avi
+*.mov
+
+# 模型检查点
+checkpoints/
+*.pth
+*.pt
+*.h5
+*.ckpt
+
+# 结果和日志
+results/
+logs/
+*.log
+
+# Jupyter Notebook临时文件
+.ipynb_checkpoints/
+
+# Python缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.env
+
+# IDE文件
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db

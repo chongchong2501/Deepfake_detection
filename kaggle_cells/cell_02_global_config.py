@@ -19,6 +19,17 @@ print(f"使用设备: {device}")
 if torch.cuda.is_available():
     print(f"GPU型号: {torch.cuda.get_device_name(0)}")
     print(f"GPU内存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+    
+    # GPU性能优化配置
+    torch.backends.cudnn.benchmark = True  # 启用cudnn自动调优
+    torch.backends.cudnn.deterministic = False  # 允许非确定性算法以提高性能
+    torch.cuda.set_per_process_memory_fraction(0.95)  # 设置GPU内存使用比例
+    
+    # 启用TensorFloat-32 (TF32) 以提高性能
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    
+    print("✅ GPU性能优化配置已启用")
 
 # 创建必要的目录
 for dir_name in ['./data', './models', './logs', './results', './results/evaluation']:

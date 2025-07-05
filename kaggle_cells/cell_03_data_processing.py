@@ -1,7 +1,7 @@
 # Cell 3: 数据处理模块
 
-def extract_frames_memory_efficient(video_path, max_frames=24, target_size=(160, 160),
-                                   quality_threshold=30, skip_frames=2):
+def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(128, 128),
+                                   quality_threshold=20, skip_frames=3):
     """内存友好的帧提取函数"""
     cap = cv2.VideoCapture(video_path)
     frames = []
@@ -50,7 +50,7 @@ def extract_frames_memory_efficient(video_path, max_frames=24, target_size=(160,
 
     return frames[:max_frames]
 
-def process_videos_simple(base_data_dir, max_videos_per_class=80, max_frames=24):
+def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16):
     """简化的视频处理函数"""
     data_list = []
     fake_methods = ['Deepfakes', 'Face2Face', 'FaceShifter', 'FaceSwap', 'NeuralTextures']

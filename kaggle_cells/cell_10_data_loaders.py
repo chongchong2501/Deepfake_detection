@@ -11,44 +11,56 @@ train_dataset = DeepfakeVideoDataset('./data/train.csv', transform=train_transfo
 val_dataset = DeepfakeVideoDataset('./data/val.csv', transform=val_transform)
 test_dataset = DeepfakeVideoDataset('./data/test.csv', transform=val_transform)
 
-# 根据GPU内存调整批次大小
+# 根据GPU内存调整批次大小 - 针对T4*2 GPU优化
 if torch.cuda.is_available():
     gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    if gpu_memory >= 16:
-        batch_size = 16
+    gpu_count = torch.cuda.device_count()
+    print(f"检测到 {gpu_count} 个GPU，每个GPU内存: {gpu_memory:.1f} GB")
+    
+    # T4*2配置优化
+    if gpu_count >= 2 and gpu_memory >= 15:  # T4*2配置
+        batch_size = 24
+    elif gpu_memory >= 16:
+        batch_size = 20
     elif gpu_memory >= 8:
-        batch_size = 8
+        batch_size = 12
     else:
-        batch_size = 4
+        batch_size = 6
 else:
     batch_size = 2
 
 print(f"使用批次大小: {batch_size}")
 
-# 创建数据加载器
+# 创建数据加载器 - 针对T4*2 GPU优化
+num_workers = min(8, torch.cuda.device_count() * 4) if torch.cuda.is_available() else 2
+print(f"使用 {num_workers} 个数据加载worker")
+
 train_loader = DataLoader(
     train_dataset, 
     batch_size=batch_size, 
     shuffle=True, 
-    num_workers=2,
+    num_workers=num_workers,
     pin_memory=torch.cuda.is_available(),
-    drop_last=True
+    drop_last=True,
+    persistent_workers=True if num_workers > 0 else False
 )
 
 val_loader = DataLoader(
     val_dataset, 
     batch_size=batch_size, 
     shuffle=False, 
-    num_workers=2,
-    pin_memory=torch.cuda.is_available()
+    num_workers=num_workers,
+    pin_memory=torch.cuda.is_available(),
+    persistent_workers=True if num_workers > 0 else False
 )
 
 test_loader = DataLoader(
     test_dataset, 
     batch_size=batch_size, 
     shuffle=False, 
-    num_workers=2,
-    pin_memory=torch.cuda.is_available()
+    num_workers=num_workers,
+    pin_memory=torch.cuda.is_available(),
+    persistent_workers=True if num_workers > 0 else False
 )
 
 print(f"训练批次数: {len(train_loader)}")

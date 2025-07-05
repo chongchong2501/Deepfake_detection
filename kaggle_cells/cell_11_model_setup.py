@@ -2,14 +2,21 @@
 
 print("🤖 创建和配置模型...")
 
-# 创建模型
+# 创建模型 - 针对T4*2 GPU优化
 model = OptimizedDeepfakeDetector(
-    backbone='resnet18',  # 使用更轻量的backbone以适应Kaggle环境
-    hidden_dim=256,
-    num_layers=1,
-    dropout=0.3,
+    backbone='resnet50',  # 使用ResNet50以充分利用T4*2 GPU性能
+    hidden_dim=512,      # 增加隐藏层维度
+    num_layers=2,        # 增加LSTM层数
+    dropout=0.4,         # 适当增加dropout防止过拟合
     use_attention=True
 ).to(device)
+
+# 多GPU支持 - 充分利用T4*2配置
+if torch.cuda.device_count() > 1:
+    print(f"使用 {torch.cuda.device_count()} 个GPU进行并行训练")
+    model = nn.DataParallel(model)
+else:
+    print("使用单GPU训练")
 
 # 计算模型参数数量
 total_params = sum(p.numel() for p in model.parameters())
@@ -23,29 +30,29 @@ print(f"模型大小估计: {total_params * 4 / 1024**2:.1f} MB")
 criterion = FocalLoss(alpha=1, gamma=2)
 print("使用焦点损失函数 (Focal Loss)")
 
-# 优化器
+# 优化器 - 针对ResNet50优化
 optimizer = optim.AdamW(
     model.parameters(), 
-    lr=1e-4, 
+    lr=2e-4,  # 稍微提高学习率以适应更大模型
     weight_decay=1e-4,
     betas=(0.9, 0.999)
 )
-print("使用AdamW优化器")
+print("使用AdamW优化器 (lr=2e-4)")
 
-# 学习率调度器
+# 学习率调度器 - 更保守的调度
 scheduler = ReduceLROnPlateau(
     optimizer, 
     mode='min', 
-    factor=0.5, 
-    patience=3, 
+    factor=0.6,  # 更保守的衰减因子
+    patience=4,  # 增加patience
     verbose=True,
     min_lr=1e-7
 )
-print("使用ReduceLROnPlateau学习率调度器")
+print("使用ReduceLROnPlateau学习率调度器 (factor=0.6, patience=4)")
 
-# 早停机制
-early_stopping = EarlyStopping(patience=5, min_delta=0.001)
-print("配置早停机制 (patience=5)")
+# 早停机制 - 增加patience以适应更大模型
+early_stopping = EarlyStopping(patience=8, min_delta=0.001)
+print("配置早停机制 (patience=8)")
 
 # 混合精度训练
 if torch.cuda.is_available():
@@ -55,8 +62,8 @@ else:
     scaler = None
     print("CPU模式，不使用混合精度训练")
 
-# 训练配置
-num_epochs = 15  # Kaggle环境下适中的训练轮数
+# 训练配置 - 针对T4*2 GPU和更大数据集优化
+num_epochs = 25  # 增加训练轮数以充分训练更大的模型
 print(f"训练轮数: {num_epochs}")
 
 # 测试模型前向传播
@@ -75,7 +82,11 @@ try:
         print(f"输入形状: {videos.shape}")
         print(f"输出形状: {outputs.shape}")
         print(f"损失值: {loss.item():.4f}")
-        print(f"输出范围: [{outputs.min():.3f}, {outputs.max():.3f}]")
+        print(f"Logits范围: [{outputs.min():.3f}, {outputs.max():.3f}]")
+        
+        # 显示概率范围
+        probs = torch.sigmoid(outputs)
+        print(f"概率范围: [{probs.min():.3f}, {probs.max():.3f}]")
         
         if attention_weights is not None:
             print(f"注意力权重形状: {attention_weights.shape}")

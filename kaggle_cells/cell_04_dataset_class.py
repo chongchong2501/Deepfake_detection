@@ -3,7 +3,7 @@
 class DeepfakeVideoDataset(Dataset):
     """深度伪造视频数据集类"""
     
-    def __init__(self, csv_file=None, data_list=None, transform=None, max_frames=24):
+    def __init__(self, csv_file=None, data_list=None, transform=None, max_frames=32):
         if csv_file is not None:
             self.df = pd.read_csv(csv_file)
             self.data_list = None

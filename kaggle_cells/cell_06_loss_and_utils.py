@@ -10,7 +10,9 @@ class FocalLoss(nn.Module):
         self.reduction = reduction
 
     def forward(self, inputs, targets):
-        ce_loss = nn.BCELoss(reduction='none')(inputs, targets)
+        # 使用 BCEWithLogitsLoss 以兼容 autocast
+        ce_loss = nn.BCEWithLogitsLoss(reduction='none')(inputs, targets)
+        # 计算概率用于focal weight
         pt = torch.exp(-ce_loss)
         focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
 

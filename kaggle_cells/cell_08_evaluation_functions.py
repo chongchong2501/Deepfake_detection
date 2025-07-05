@@ -26,11 +26,12 @@ def evaluate_model_optimized(model, test_loader, criterion, device):
             loss = criterion(output, target)
             total_loss += loss.item()
             
-            # 收集预测结果
-            predictions = (output > 0.5).float()
+            # 收集预测结果 (应用 sigmoid 获得概率)
+            probs = torch.sigmoid(output)
+            predictions = (probs > 0.5).float()
             all_predictions.extend(predictions.cpu().numpy())
             all_targets.extend(target.cpu().numpy())
-            all_scores.extend(output.cpu().numpy())
+            all_scores.extend(probs.cpu().numpy())
     
     avg_loss = total_loss / len(test_loader)
     avg_inference_time = np.mean(inference_times)

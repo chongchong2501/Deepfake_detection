@@ -3,7 +3,7 @@
 # 如果需要处理数据（首次运行）
 if not os.path.exists('./data/train.csv'):
     print("📁 开始数据处理...")
-    data_list = process_videos_simple(BASE_DATA_DIR, max_videos_per_class=50, max_frames=24)
+    data_list = process_videos_simple(BASE_DATA_DIR, max_videos_per_class=200, max_frames=32)
     
     if len(data_list) == 0:
         print("❌ 未找到数据，请检查数据路径")

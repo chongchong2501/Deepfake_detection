@@ -198,10 +198,13 @@ checkpoint = torch.load('./models/best_model.pth')
 model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 
-# 进行推理
+# 进行推理 (注意: 模型输出 logits，需要应用 sigmoid 获得概率)
 with torch.no_grad():
-    outputs, attention = model(video_tensor)
-    prediction = torch.sigmoid(outputs).cpu().numpy()
+    logits, attention = model(video_tensor)
+    probs = torch.sigmoid(logits)  # 转换为概率
+    prediction = (probs > 0.5).float()
+    confidence = probs.item()
 """)
 
 print("\n💡 提示: 在Kaggle中运行时，建议按顺序执行所有cell，确保数据路径正确设置。")
+print("\n⚠️  重要: 模型输出的是 logits，使用时必须先应用 sigmoid 函数转换为概率值！")

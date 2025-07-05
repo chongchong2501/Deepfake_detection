@@ -42,7 +42,7 @@ class OptimizedDeepfakeDetector(nn.Module):
                 batch_first=True
             )
         
-        # 分类器
+        # 分类器 (移除 Sigmoid，因为使用 BCEWithLogitsLoss)
         self.classifier = nn.Sequential(
             nn.Linear(lstm_output_dim, hidden_dim),
             nn.ReLU(),
@@ -50,8 +50,7 @@ class OptimizedDeepfakeDetector(nn.Module):
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1),
-            nn.Sigmoid()
+            nn.Linear(hidden_dim // 2, 1)
         )
         
     def forward(self, x):

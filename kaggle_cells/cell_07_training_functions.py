@@ -32,11 +32,13 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scaler=None):
             optimizer.step()
 
         total_loss += loss.item()
-        predicted = (output > 0.5).float()
+        # 应用 sigmoid 获得概率进行预测
+        probs = torch.sigmoid(output)
+        predicted = (probs > 0.5).float()
         total += target.size(0)
         correct += (predicted == target).sum().item()
 
-        all_preds.extend(output.detach().cpu().numpy())
+        all_preds.extend(probs.detach().cpu().numpy())
         all_targets.extend(target.detach().cpu().numpy())
 
         pbar.set_postfix({
@@ -72,11 +74,13 @@ def validate_epoch(model, val_loader, criterion, device):
             loss = criterion(output, target)
 
             total_loss += loss.item()
-            predicted = (output > 0.5).float()
+            # 应用 sigmoid 获得概率进行预测
+            probs = torch.sigmoid(output)
+            predicted = (probs > 0.5).float()
             total += target.size(0)
             correct += (predicted == target).sum().item()
 
-            all_preds.extend(output.cpu().numpy())
+            all_preds.extend(probs.cpu().numpy())
             all_targets.extend(target.cpu().numpy())
 
             pbar.set_postfix({

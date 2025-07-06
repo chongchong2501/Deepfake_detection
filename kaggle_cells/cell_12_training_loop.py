@@ -1,8 +1,5 @@
 # Cell 12: 训练循环 - GPU优化版本
-
-import time
-from datetime import datetime
-import os
+# 所有import语句已移至cell_01_imports_and_setup.py
 
 # 确保模型保存目录存在
 os.makedirs('./models', exist_ok=True)

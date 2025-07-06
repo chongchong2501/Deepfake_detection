@@ -1,8 +1,96 @@
-# Cell 3: 数据处理模块
+# Cell 3: GPU加速数据处理模块
+# 所有import语句已移至cell_01_imports_and_setup.py
 
-def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(128, 128),
-                                   quality_threshold=20, skip_frames=3):
-    """内存友好的帧提取函数"""
+def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 224),
+                                  quality_threshold=20, use_gpu=True):
+    """GPU加速的帧提取函数"""
+    try:
+        # 使用torchvision的GPU加速视频读取
+        if use_gpu and torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+            
+        # 读取视频（torchvision自动处理解码）
+        try:
+            video_tensor, audio, info = read_video(video_path, pts_unit='sec')
+            # video_tensor shape: (T, H, W, C)
+        except Exception as e:
+            print(f"GPU视频读取失败，回退到CPU: {e}")
+            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold)
+        
+        if video_tensor.size(0) == 0:
+            return []
+            
+        # 移动到GPU进行处理
+        video_tensor = video_tensor.to(device, non_blocking=True)
+        total_frames = video_tensor.size(0)
+        
+        # 智能帧采样策略
+        if total_frames <= max_frames:
+            frame_indices = torch.arange(0, total_frames, device=device)
+        else:
+            # 均匀采样
+            step = total_frames / max_frames
+            frame_indices = torch.arange(0, total_frames, step, device=device).long()[:max_frames]
+        
+        # 批量提取帧
+        selected_frames = video_tensor[frame_indices]  # (max_frames, H, W, C)
+        
+        # GPU上进行质量检测（使用Sobel算子代替Laplacian）
+        if quality_threshold > 0:
+            # 转换为灰度图进行质量检测
+            gray_frames = selected_frames.mean(dim=-1, keepdim=True)  # (T, H, W, 1)
+            gray_frames = gray_frames.permute(0, 3, 1, 2)  # (T, 1, H, W)
+            
+            # 使用Sobel算子计算图像质量
+            sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], 
+                                 dtype=torch.float32, device=device).view(1, 1, 3, 3)
+            sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], 
+                                 dtype=torch.float32, device=device).view(1, 1, 3, 3)
+            
+            grad_x = F.conv2d(gray_frames, sobel_x, padding=1)
+            grad_y = F.conv2d(gray_frames, sobel_y, padding=1)
+            quality_scores = (grad_x.pow(2) + grad_y.pow(2)).mean(dim=[1, 2, 3])
+            
+            # 过滤低质量帧
+            quality_mask = quality_scores > quality_threshold
+            if quality_mask.sum() > 0:
+                selected_frames = selected_frames[quality_mask]
+            
+        # GPU上进行尺寸调整
+        selected_frames = selected_frames.permute(0, 3, 1, 2).float()  # (T, C, H, W)
+        if selected_frames.size(-1) != target_size[0] or selected_frames.size(-2) != target_size[1]:
+            selected_frames = F.interpolate(selected_frames, size=target_size, 
+                                          mode='bilinear', align_corners=False)
+        
+        # 确保帧数足够
+        current_frames = selected_frames.size(0)
+        if current_frames < max_frames:
+            # 重复最后一帧
+            if current_frames > 0:
+                last_frame = selected_frames[-1:].repeat(max_frames - current_frames, 1, 1, 1)
+                selected_frames = torch.cat([selected_frames, last_frame], dim=0)
+            else:
+                # 创建黑色帧
+                selected_frames = torch.zeros(max_frames, 3, target_size[0], target_size[1], 
+                                            device=device, dtype=torch.float32)
+        
+        # 限制到最大帧数
+        selected_frames = selected_frames[:max_frames]
+        
+        # 转换回CPU numpy格式（为了兼容现有代码）
+        frames_cpu = selected_frames.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+        frames_list = [frame for frame in frames_cpu]
+        
+        return frames_list
+        
+    except Exception as e:
+        print(f"GPU帧提取失败，回退到CPU: {e}")
+        return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold)
+
+def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(224, 224), quality_threshold=20):
+    """CPU回退的帧提取函数"""
     cap = cv2.VideoCapture(video_path)
     frames = []
 
@@ -17,7 +105,7 @@ def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(128,
 
     # 均匀采样策略
     if total_frames <= max_frames:
-        frame_indices = list(range(0, total_frames, skip_frames))
+        frame_indices = list(range(0, total_frames, max(1, total_frames // max_frames)))
     else:
         step = max(1, total_frames // max_frames)
         frame_indices = list(range(0, total_frames, step))[:max_frames]
@@ -33,14 +121,16 @@ def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(128,
         if ret:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
-            # 简化质量检测
-            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-            quality = cv2.Laplacian(gray, cv2.CV_64F).var()
-
-            if quality > quality_threshold:
-                frame = cv2.resize(frame, target_size)
-                frames.append(frame)
-                frame_count += 1
+            # 质量检测
+            if quality_threshold > 0:
+                gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                quality = cv2.Laplacian(gray, cv2.CV_64F).var()
+                if quality <= quality_threshold:
+                    continue
+            
+            frame = cv2.resize(frame, target_size)
+            frames.append(frame)
+            frame_count += 1
 
     cap.release()
 
@@ -49,6 +139,12 @@ def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(128,
         frames.append(frames[-1].copy())
 
     return frames[:max_frames]
+
+# 为了向后兼容，保留原函数名
+def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(224, 224),
+                                   quality_threshold=20, skip_frames=3):
+    """兼容性包装函数，优先使用GPU加速"""
+    return extract_frames_gpu_accelerated(video_path, max_frames, target_size, quality_threshold)
 
 def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16):
     """简化的视频处理函数"""

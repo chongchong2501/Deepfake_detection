@@ -33,6 +33,7 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as TF
 import torchvision.models as models
+from torchvision.io import read_video
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau
 from torch.cuda.amp import GradScaler, autocast
 
@@ -43,6 +44,10 @@ from sklearn.metrics import (
     roc_curve, auc, precision_recall_curve, balanced_accuracy_score
 )
 from sklearn.model_selection import train_test_split
+
+# 系统监控和性能分析
+import psutil
+import traceback
 
 # 数据增强
 try:

@@ -1,5 +1,12 @@
 # Cell 1: 导入库和环境设置
 
+# 修复CUDA多进程问题 - 必须在导入torch之前设置
+import multiprocessing as mp
+try:
+    mp.set_start_method('spawn', force=True)
+except RuntimeError:
+    pass  # 如果已经设置过，忽略错误
+
 import os
 import cv2
 import numpy as np

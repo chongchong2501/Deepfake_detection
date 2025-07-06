@@ -3,7 +3,7 @@
 class DeepfakeVideoDataset(Dataset):
     """深度伪造视频数据集类 - GPU优化版本"""
     
-    def __init__(self, csv_file=None, data_list=None, transform=None, max_frames=32, gpu_preprocessing=True):
+    def __init__(self, csv_file=None, data_list=None, transform=None, max_frames=32, gpu_preprocessing=True, cache_frames=True):
         if csv_file is not None:
             self.df = pd.read_csv(csv_file)
             self.data_list = None
@@ -16,6 +16,10 @@ class DeepfakeVideoDataset(Dataset):
         self.transform = transform
         self.max_frames = max_frames
         self.gpu_preprocessing = gpu_preprocessing and torch.cuda.is_available()
+        self.cache_frames = cache_frames
+        
+        # 帧缓存字典
+        self.frame_cache = {} if cache_frames else None
         
         # GPU预处理的标准化参数
         if self.gpu_preprocessing:
@@ -34,11 +38,19 @@ class DeepfakeVideoDataset(Dataset):
             frames = item['frames']
             label = item['label']
         else:
-            # 从CSV文件获取路径并重新提取帧
+            # 从CSV文件获取路径并提取帧（支持缓存）
             row = self.df.iloc[idx]
             video_path = row['video_path']
             label = row['label']
-            frames = extract_frames_memory_efficient(video_path, self.max_frames)
+            
+            # 检查缓存
+            if self.cache_frames and video_path in self.frame_cache:
+                frames = self.frame_cache[video_path]
+            else:
+                frames = extract_frames_memory_efficient(video_path, self.max_frames)
+                # 缓存帧数据
+                if self.cache_frames and len(frames) > 0:
+                    self.frame_cache[video_path] = frames
         
         # 确保有足够的帧
         if len(frames) == 0:

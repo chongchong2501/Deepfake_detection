@@ -8,38 +8,31 @@ results_summary = {
     'experiment_info': {
         'timestamp': datetime.now().isoformat(),
         'model_architecture': 'OptimizedDeepfakeDetector',
-        'backbone': 'resnet18',
+        'backbone': 'resnet50',
         'total_epochs': len(train_history['train_loss']),
-        'best_epoch': best_epoch + 1 if 'best_epoch' in locals() else len(train_history['train_loss']),
-        'early_stopping': True,
-        'mixed_precision': torch.cuda.is_available()
+        'early_stopping': True
     },
     'dataset_info': {
         'train_samples': len(train_dataset),
         'val_samples': len(val_dataset),
         'test_samples': len(test_dataset),
-        'batch_size': batch_size,
-        'num_workers': 2
+        'batch_size': batch_size
     },
     'training_config': {
         'optimizer': 'AdamW',
         'learning_rate': 1e-4,
         'weight_decay': 1e-4,
         'loss_function': 'FocalLoss',
-        'scheduler': 'ReduceLROnPlateau',
-        'early_stopping_patience': 5
+        'scheduler': 'OneCycleLR',
+        'early_stopping_patience': 7
     },
     'final_metrics': {
         'test_loss': float(eval_results['loss']),
         'accuracy': float(metrics['accuracy']),
-        'balanced_accuracy': float(metrics['balanced_accuracy']),
         'precision': float(metrics['precision']),
         'recall': float(metrics['recall']),
-        'specificity': float(metrics['specificity']),
         'f1_score': float(metrics['f1']),
-        'auc_roc': float(metrics['auc_roc']),
-        'auc_pr': float(metrics['auc_pr']),
-        'npv': float(metrics['npv'])
+        'auc_roc': float(metrics['auc_roc'])
     },
     'confusion_matrix': {
         'tn': int(metrics['tn']),
@@ -47,19 +40,13 @@ results_summary = {
         'fn': int(metrics['fn']),
         'tp': int(metrics['tp'])
     },
-    'performance': {
-        'avg_inference_time_ms': float(eval_results['avg_inference_time'] * 1000),
-        'total_inference_time_s': float(eval_results['total_inference_time']),
-        'samples_per_second': float(len(eval_results['targets']) / eval_results['total_inference_time'])
-    },
     'training_history': {
         'train_loss': [float(x) for x in train_history['train_loss']],
         'train_acc': [float(x) for x in train_history['train_acc']],
         'train_auc': [float(x) for x in train_history['train_auc']],
         'val_loss': [float(x) for x in train_history['val_loss']],
         'val_acc': [float(x) for x in train_history['val_acc']],
-        'val_auc': [float(x) for x in train_history['val_auc']],
-        'learning_rates': [float(x) for x in train_history['lr']]
+        'val_auc': [float(x) for x in train_history['val_auc']]
     },
     'class_specific_metrics': {
         'real_video_accuracy': float(real_accuracy),
@@ -97,7 +84,7 @@ report = f"""
 {'='*50}
 
 实验时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-模型架构: OptimizedDeepfakeDetector (ResNet18 + LSTM + Attention)
+模型架构: OptimizedDeepfakeDetector (ResNet50 + LSTM + Attention)
 
 数据集信息:
 - 训练样本: {len(train_dataset):,}
@@ -107,19 +94,16 @@ report = f"""
 
 训练配置:
 - 优化器: AdamW (lr=1e-4, weight_decay=1e-4)
-- 损失函数: Focal Loss (alpha=1, gamma=2)
-- 学习率调度: ReduceLROnPlateau
-- 早停机制: patience=5
-- 混合精度训练: {'启用' if torch.cuda.is_available() else '禁用'}
+- 损失函数: Focal Loss
+- 学习率调度: OneCycleLR
+- 早停机制: patience=7
 
 最终性能指标:
 - 准确率: {metrics['accuracy']*100:.2f}%
-- 平衡准确率: {metrics['balanced_accuracy']*100:.2f}%
 - 精确率: {metrics['precision']:.4f}
 - 召回率: {metrics['recall']:.4f}
 - F1分数: {metrics['f1']:.4f}
 - AUC-ROC: {metrics['auc_roc']:.4f}
-- AUC-PR: {metrics['auc_pr']:.4f}
 
 混淆矩阵:
 - 真负例 (TN): {metrics['tn']}
@@ -131,10 +115,6 @@ report = f"""
 - 真实视频检测准确率: {real_accuracy*100:.2f}%
 - 伪造视频检测准确率: {fake_accuracy*100:.2f}%
 
-推理性能:
-- 平均推理时间: {eval_results['avg_inference_time']*1000:.2f} ms/batch
-- 处理速度: {len(eval_results['targets'])/eval_results['total_inference_time']:.1f} samples/s
-
 训练总结:
 - 训练轮数: {len(train_history['train_loss'])}
 - 最佳验证准确率: {max(train_history['val_acc']):.2f}%
@@ -142,10 +122,6 @@ report = f"""
 
 文件输出:
 - 模型权重: ./models/best_model.pth
-- 训练历史图: ./results/training_history.png
-- 混淆矩阵图: ./results/evaluation/confusion_matrix.png
-- ROC/PR曲线图: ./results/evaluation/roc_pr_curves.png
-- 分数分布图: ./results/evaluation/score_distribution.png
 - 实验结果: ./results/experiment_results.json
 - 训练历史: ./results/training_history.csv
 - 预测结果: ./results/test_predictions.csv
@@ -167,10 +143,9 @@ print("="*60)
 print(f"📊 最终测试准确率: {metrics['accuracy']*100:.2f}%")
 print(f"📊 AUC-ROC分数: {metrics['auc_roc']:.4f}")
 print(f"📊 F1分数: {metrics['f1']:.4f}")
-print(f"⚡ 推理速度: {len(eval_results['targets'])/eval_results['total_inference_time']:.1f} samples/s")
 print("\n📁 所有结果文件已保存到 ./results/ 目录")
 print("📁 最佳模型已保存到 ./models/best_model.pth")
-print("\n✨ 实验成功完成！可以在Kaggle中查看所有生成的图表和结果文件。")
+print("\n✨ 实验成功完成！")
 print("="*60)
 
 # 显示文件结构
@@ -182,12 +157,7 @@ print("""
   ├── experiment_results.json
   ├── experiment_report.txt
   ├── training_history.csv
-  ├── training_history.png
-  ├── test_predictions.csv
-  └── evaluation/
-      ├── confusion_matrix.png
-      ├── roc_pr_curves.png
-      └── score_distribution.png
+  └── test_predictions.csv
 """)
 
 print("\n🚀 可以使用以下代码加载训练好的模型进行推理:")
@@ -197,14 +167,6 @@ model = OptimizedDeepfakeDetector(...)
 checkpoint = torch.load('./models/best_model.pth')
 model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
-
-# 进行推理 (注意: 模型输出 logits，需要应用 sigmoid 获得概率)
-with torch.no_grad():
-    logits, attention = model(video_tensor)
-    probs = torch.sigmoid(logits)  # 转换为概率
-    prediction = (probs > 0.5).float()
-    confidence = probs.item()
 """)
 
-print("\n💡 提示: 在Kaggle中运行时，建议按顺序执行所有cell，确保数据路径正确设置。")
-print("\n⚠️  重要: 模型输出的是 logits，使用时必须先应用 sigmoid 函数转换为概率值！")
+print("\n✅ Kaggle T4 GPU优化版本 - 训练完成！")

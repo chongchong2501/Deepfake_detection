@@ -43,8 +43,8 @@ def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 
         
         # GPU上进行质量检测（使用Sobel算子代替Laplacian）
         if quality_threshold > 0:
-            # 转换为灰度图进行质量检测
-            gray_frames = selected_frames.mean(dim=-1, keepdim=True)  # (T, H, W, 1)
+            # 转换为灰度图进行质量检测（先转换为float类型）
+            gray_frames = selected_frames.float().mean(dim=-1, keepdim=True)  # (T, H, W, 1)
             gray_frames = gray_frames.permute(0, 3, 1, 2)  # (T, 1, H, W)
             
             # 使用Sobel算子计算图像质量

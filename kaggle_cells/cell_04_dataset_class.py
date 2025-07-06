@@ -127,6 +127,11 @@ class DeepfakeVideoDataset(Dataset):
         
         self.cache_misses += 1
         
+        # 检查PyAV是否可用
+        if not globals().get('PYAV_AVAILABLE', False):
+            print(f"PyAV不可用，GPU流水线回退到传统方法: {video_path}")
+            return self._fallback_processing(video_path, label)
+        
         try:
             # 使用torchvision直接在GPU上读取和处理视频
             # import语句已在cell_01中定义
@@ -181,22 +186,26 @@ class DeepfakeVideoDataset(Dataset):
             
         except Exception as e:
             print(f"GPU流水线处理失败，回退到传统方法: {e}")
-            # 回退到传统CPU处理
-            frames = extract_frames_gpu_accelerated(video_path, self.max_frames, target_size=(224, 224))
-            if len(frames) == 0:
-                frames = [np.zeros((224, 224, 3), dtype=np.uint8) for _ in range(self.max_frames)]
-            
-            while len(frames) < self.max_frames:
-                frames.append(frames[-1].copy() if frames else np.zeros((224, 224, 3), dtype=np.uint8))
-            
-            frames = frames[:self.max_frames]
-            frames_array = np.stack(frames)
-            video_tensor = torch.from_numpy(frames_array).permute(0, 3, 1, 2).float()
-            video_tensor = video_tensor.to('cuda', non_blocking=True, dtype=torch.float16) / 255.0
-            video_tensor = (video_tensor - self.mean.view(1, 3, 1, 1)) / self.std.view(1, 3, 1, 1)
-            
-            label_tensor = torch.tensor(label, dtype=torch.float32, device='cuda')
-            return video_tensor, label_tensor
+            return self._fallback_processing(video_path, label)
+    
+    def _fallback_processing(self, video_path, label):
+        """PyAV不可用时的回退处理方法"""
+        # 回退到传统CPU处理
+        frames = extract_frames_gpu_accelerated(video_path, self.max_frames, target_size=(224, 224))
+        if len(frames) == 0:
+            frames = [np.zeros((224, 224, 3), dtype=np.uint8) for _ in range(self.max_frames)]
+        
+        while len(frames) < self.max_frames:
+            frames.append(frames[-1].copy() if frames else np.zeros((224, 224, 3), dtype=np.uint8))
+        
+        frames = frames[:self.max_frames]
+        frames_array = np.stack(frames)
+        video_tensor = torch.from_numpy(frames_array).permute(0, 3, 1, 2).float()
+        video_tensor = video_tensor.to('cuda', non_blocking=True, dtype=torch.float16) / 255.0
+        video_tensor = (video_tensor - self.mean.view(1, 3, 1, 1)) / self.std.view(1, 3, 1, 1)
+        
+        label_tensor = torch.tensor(label, dtype=torch.float32, device='cuda')
+        return video_tensor, label_tensor
     
     def _add_to_gpu_cache(self, video_path, video_tensor):
         """添加视频到GPU缓存，使用LRU策略"""

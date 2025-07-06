@@ -1,6 +1,6 @@
 # Cell 1: 导入库和环境设置
 
-# 修复CUDA多进程问题 - 必须在导入torch之前设置
+# 修复CUDA多进程问题
 import multiprocessing as mp
 try:
     mp.set_start_method('spawn', force=True)
@@ -48,6 +48,16 @@ from sklearn.model_selection import train_test_split
 # 系统监控和性能分析
 import psutil
 import traceback
+
+
+# 视频处理 (PyAV)
+try:
+    import av
+    PYAV_AVAILABLE = True
+    print("✅ PyAV已安装，支持GPU视频处理")
+except ImportError:
+    PYAV_AVAILABLE = False
+    print("⚠️ PyAV未安装，视频处理将回退到CPU模式")
 
 # 数据增强
 try:

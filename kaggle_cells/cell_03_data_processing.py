@@ -1,10 +1,14 @@
 # Cell 3: GPU加速数据处理模块
-# 所有import语句已移至cell_01_imports_and_setup.py
 
 def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 224),
                                   quality_threshold=20, use_gpu=True):
     """GPU加速的帧提取函数"""
     try:
+        # 检查PyAV是否可用
+        if not globals().get('PYAV_AVAILABLE', False):
+            print(f"PyAV不可用，使用CPU回退处理: {video_path}")
+            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold)
+            
         # 使用torchvision的GPU加速视频读取
         if use_gpu and torch.cuda.is_available():
             device = torch.device('cuda')

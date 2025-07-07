@@ -1,0 +1,5 @@
+{
+  "DATA_DIR": "e:\\program\\Deepfake\\dataset\\FaceForensics++_C23",
+  "NUM_EPOCHS": 2,
+  "BATCH_SIZE": 2
+}

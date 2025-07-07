@@ -173,7 +173,7 @@ class VideoProcessor:
 
         return frames[:self.max_frames]
     
-    def process_videos(self, base_data_dir, max_videos_per_class=120):
+    def process_videos(self, base_data_dir, max_videos_per_class=250):
         """处理视频数据 - RTX4070优化版本"""
         data_list = []
         fake_methods = ['Deepfakes', 'Face2Face', 'FaceShifter', 'FaceSwap', 'NeuralTextures']
@@ -185,7 +185,7 @@ class VideoProcessor:
             video_files = [f for f in os.listdir(original_dir)
                           if f.endswith(('.mp4', '.avi', '.mov'))]
             
-            if len(video_files) > max_videos_per_class:
+            if max_videos_per_class is not None and len(video_files) > max_videos_per_class:
                 video_files = random.sample(video_files, max_videos_per_class)
 
             print(f"找到 {len(video_files)} 个真实视频")
@@ -214,7 +214,7 @@ class VideoProcessor:
                 video_files = [f for f in os.listdir(method_dir)
                               if f.endswith(('.mp4', '.avi', '.mov'))]
                 
-                if len(video_files) > max_videos_per_class:
+                if max_videos_per_class is not None and len(video_files) > max_videos_per_class:
                     video_files = random.sample(video_files, max_videos_per_class)
 
                 print(f"处理 {method}: {len(video_files)} 个视频")
@@ -289,15 +289,15 @@ class VideoProcessor:
         print(f"数据集已保存到: {filename}")
         return df
 
-def prepare_data(data_dir=None, max_videos_per_class=120, force_reprocess=False):
+def prepare_data(data_dir=None, max_videos_per_class=250, force_reprocess=False):
     """数据准备主函数"""
     if data_dir is None:
         data_dir = config.DATA_ROOT
     
     # 检查是否已有处理好的数据
-    train_csv = config.PROJECT_ROOT / "data" / "train.csv"
-    val_csv = config.PROJECT_ROOT / "data" / "val.csv"
-    test_csv = config.PROJECT_ROOT / "data" / "test.csv"
+    train_csv = config.DATA_CACHE_DIR / "train.csv"
+    val_csv = config.DATA_CACHE_DIR / "val.csv"
+    test_csv = config.DATA_CACHE_DIR / "test.csv"
     
     if not force_reprocess and all(f.exists() for f in [train_csv, val_csv, test_csv]):
         print("发现已处理的数据文件，直接加载...")
@@ -312,7 +312,7 @@ def prepare_data(data_dir=None, max_videos_per_class=120, force_reprocess=False)
         return train_df, val_df, test_df
     
     # 创建数据目录
-    (config.PROJECT_ROOT / "data").mkdir(exist_ok=True)
+    config.DATA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     
     # 处理视频数据
     processor = VideoProcessor(

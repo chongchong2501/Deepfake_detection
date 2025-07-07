@@ -12,11 +12,15 @@ class Config:
     # 基础路径配置
     PROJECT_ROOT = Path(__file__).parent.parent
     DATA_ROOT = PROJECT_ROOT.parent / "dataset" / "FaceForensics++_C23"
-    MODELS_DIR = PROJECT_ROOT / "models"
-    LOGS_DIR = PROJECT_ROOT / "logs"
-    RESULTS_DIR = PROJECT_ROOT / "results"
+    OUTPUT_DIR = PROJECT_ROOT / "outputs"  # 主要输出目录
+    MODELS_DIR = OUTPUT_DIR / "models"     # 模型保存目录
+    LOGS_DIR = OUTPUT_DIR / "logs"         # 日志目录
+    RESULTS_DIR = OUTPUT_DIR / "results"   # 结果保存目录
+    DATA_CACHE_DIR = OUTPUT_DIR / "data"   # 数据缓存目录
     
     # 数据配置
+    DATA_DIR = DATA_ROOT  # 数据目录
+    MAX_VIDEOS_PER_CLASS = 500  # 每类最大视频数
     MAX_FRAMES = 16  # 每个视频提取的最大帧数
     FRAME_SIZE = (224, 224)  # 帧尺寸
     TRAIN_RATIO = 0.7
@@ -43,6 +47,7 @@ class Config:
     PERSISTENT_WORKERS = True
     
     # GPU配置
+    USE_CUDA = True  # 使用CUDA
     USE_MIXED_PRECISION = True  # RTX4070支持混合精度
     GPU_MEMORY_FRACTION = 0.85  # 保守的内存使用
     
@@ -82,7 +87,8 @@ class Config:
             print(f"GPU内存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
         
         # 创建必要目录
-        for directory in [cls.MODELS_DIR, cls.LOGS_DIR, cls.RESULTS_DIR]:
+        cls.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        for directory in [cls.MODELS_DIR, cls.LOGS_DIR, cls.RESULTS_DIR, cls.DATA_CACHE_DIR]:
             directory.mkdir(parents=True, exist_ok=True)
         
         print("✅ 环境配置完成")

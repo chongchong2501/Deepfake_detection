@@ -209,7 +209,7 @@ def demo_training(model, train_data, val_data, quick_mode=False, output_dir='./d
     
     print_step(3, "开始训练")
     
-    # 创建输出目录
+    # 创建演示输出目录（注意：标准输出目录已由 config.setup_environment() 创建）
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     

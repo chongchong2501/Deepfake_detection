@@ -43,20 +43,12 @@ def parse_args():
     return parser.parse_args()
 
 def setup_directories(output_dir):
-    """设置输出目录"""
+    """设置输出目录（已由 config.setup_environment() 处理，此函数保持兼容性）"""
     output_dir = Path(output_dir)
     
-    # 创建必要的目录
-    directories = [
-        output_dir,
-        output_dir / 'models',
-        output_dir / 'logs',
-        output_dir / 'plots',
-        output_dir / 'results'
-    ]
-    
-    for directory in directories:
-        directory.mkdir(parents=True, exist_ok=True)
+    # 注意：目录创建已由 config.setup_environment() 统一处理
+    # 这里只确保输出目录存在（防止配置未正确调用的情况）
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     return output_dir
 

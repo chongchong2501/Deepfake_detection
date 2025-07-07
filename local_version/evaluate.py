@@ -179,8 +179,7 @@ def main():
         config.DATA_DIR = Path(args.data_dir)
     if args.output_dir:
         config.OUTPUT_DIR = Path(args.output_dir)
-    else:
-        config.OUTPUT_DIR = Path('./evaluation_results')
+    # 注意：如果未指定输出目录，将使用 config.py 中的默认 OUTPUT_DIR
     if args.batch_size:
         config.BATCH_SIZE = args.batch_size
     if args.no_cuda:

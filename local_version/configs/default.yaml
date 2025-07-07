@@ -1,0 +1,145 @@
+# 默认配置 - 深度伪造检测系统
+# 适用于RTX4070 Laptop的标准训练配置
+
+# 数据配置
+data:
+  data_dir: "./data"  # 数据目录
+  max_videos_per_class: 500  # 每类最大视频数
+  max_frames: 32  # 每个视频最大帧数
+  frame_size: [224, 224]  # 帧尺寸
+  train_split: 0.7  # 训练集比例
+  val_split: 0.2   # 验证集比例
+  test_split: 0.1  # 测试集比例
+  
+  # 数据预处理
+  quality_threshold: 50  # 帧质量阈值
+  skip_frames: 2  # 跳帧间隔
+  
+# 模型配置
+model:
+  backbone: "resnet50"  # 骨干网络
+  hidden_dim: 512  # LSTM隐藏维度
+  num_layers: 2    # LSTM层数
+  dropout: 0.5     # Dropout率
+  use_attention: true  # 使用注意力机制
+  attention_heads: 8   # 注意力头数
+  pretrained: true # 使用预训练权重
+  
+  # 分类器配置
+  classifier_layers: [512, 256, 1]  # 分类器层维度
+  classifier_dropout: 0.3
+
+# 训练配置
+training:
+  epochs: 50       # 训练轮数
+  batch_size: 12   # 批次大小（RTX4070推荐）
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  
+  # 优化器配置
+  optimizer: "adamw"
+  scheduler: "cosine"
+  warmup_epochs: 5
+  min_lr: 1e-6
+  
+  # 混合精度训练
+  mixed_precision: true
+  gradient_clipping: 1.0
+  gradient_accumulation_steps: 1
+  
+  # 早停配置
+  early_stopping:
+    patience: 10
+    min_delta: 0.001
+    monitor: "val_loss"
+    restore_best_weights: true
+
+# 数据加载配置
+dataloader:
+  num_workers: 6   # 数据加载进程数
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true  # 丢弃最后不完整的batch
+
+# 损失函数配置
+loss:
+  type: "focal"     # 使用Focal Loss
+  alpha: 0.25
+  gamma: 2.0
+  label_smoothing: 0.1
+  class_weights: null  # 自动计算类别权重
+
+# 数据增强配置
+augmentation:
+  train:
+    horizontal_flip: 0.5
+    vertical_flip: 0.1
+    rotation: 15
+    brightness: 0.2
+    contrast: 0.2
+    saturation: 0.1
+    hue: 0.05
+    gaussian_blur: 0.1
+    motion_blur: 0.1
+    noise: 0.05
+    normalize: true
+    
+    # Albumentations增强
+    use_albumentations: true
+    albumentations_prob: 0.8
+  
+  val:
+    normalize: true
+
+# 输出配置
+output:
+  save_dir: "./outputs/default"
+  log_dir: "./logs/default"
+  checkpoint_dir: "./checkpoints/default"
+  save_frequency: 5  # 每5个epoch保存一次
+  save_best_only: false
+  
+# 设备配置
+device:
+  use_cuda: true
+  device_id: 0
+  benchmark: true  # 启用cudnn benchmark
+  deterministic: false  # 不强制确定性（性能优先）
+
+# 日志配置
+logging:
+  level: "INFO"
+  log_frequency: 20  # 每20个batch记录一次
+  save_predictions: true
+  plot_frequency: 10  # 每10个epoch绘制图表
+  
+# 评估配置
+evaluation:
+  metrics: ["accuracy", "auc", "f1", "precision", "recall"]
+  threshold: 0.5  # 分类阈值
+  save_confusion_matrix: true
+  save_roc_curve: true
+  
+# 内存优化
+memory:
+  cache_size: 1000  # 帧缓存大小
+  clear_cache_frequency: 100  # 清理缓存频率
+  max_memory_usage: 0.9  # 最大GPU内存使用率
+  
+# 调试配置
+debug:
+  enabled: false
+  max_batches_per_epoch: null
+  profile_memory: false
+  save_intermediate: false
+  
+# 随机种子
+seed: 42
+
+# 恢复训练配置
+resume:
+  auto_resume: true  # 自动从最新检查点恢复
+  resume_path: null  # 指定恢复路径
+  reset_optimizer: false  # 是否重置优化器状态
+  reset_scheduler: false  # 是否重置调度器状态

@@ -1,0 +1,96 @@
+# 快速演示配置 - 深度伪造检测系统
+# 适用于RTX4070 Laptop的快速测试和演示
+
+# 数据配置
+data:
+  data_dir: "./data"  # 数据目录
+  max_videos_per_class: 20  # 每类最大视频数（演示用）
+  max_frames: 16  # 每个视频最大帧数
+  frame_size: [224, 224]  # 帧尺寸
+  train_split: 0.7  # 训练集比例
+  val_split: 0.2   # 验证集比例
+  test_split: 0.1  # 测试集比例
+
+# 模型配置
+model:
+  backbone: "resnet18"  # 骨干网络（演示用轻量级）
+  hidden_dim: 256  # LSTM隐藏维度
+  num_layers: 1    # LSTM层数（演示用）
+  dropout: 0.3     # Dropout率
+  use_attention: false  # 不使用注意力机制（加快训练）
+  pretrained: true # 使用预训练权重
+
+# 训练配置
+training:
+  epochs: 5        # 训练轮数（演示用）
+  batch_size: 8    # 批次大小
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  
+  # 优化器配置
+  optimizer: "adam"
+  scheduler: "cosine"
+  warmup_epochs: 1
+  
+  # 混合精度训练
+  mixed_precision: true
+  gradient_clipping: 1.0
+  
+  # 早停配置
+  early_stopping:
+    patience: 3
+    min_delta: 0.001
+    monitor: "val_loss"
+
+# 数据加载配置
+dataloader:
+  num_workers: 4   # 数据加载进程数
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+
+# 损失函数配置
+loss:
+  type: "focal"     # 使用Focal Loss
+  alpha: 0.25
+  gamma: 2.0
+  label_smoothing: 0.1
+
+# 数据增强配置（轻量级）
+augmentation:
+  train:
+    horizontal_flip: 0.5
+    rotation: 10
+    brightness: 0.1
+    contrast: 0.1
+    normalize: true
+  
+  val:
+    normalize: true
+
+# 输出配置
+output:
+  save_dir: "./outputs/quick_demo"
+  log_dir: "./logs/quick_demo"
+  checkpoint_dir: "./checkpoints/quick_demo"
+  save_frequency: 2  # 每2个epoch保存一次
+  
+# 设备配置
+device:
+  use_cuda: true
+  device_id: 0
+  benchmark: true  # 启用cudnn benchmark
+
+# 日志配置
+logging:
+  level: "INFO"
+  log_frequency: 10  # 每10个batch记录一次
+  
+# 调试配置
+debug:
+  enabled: true
+  max_batches_per_epoch: 50  # 限制每个epoch的batch数
+  profile_memory: true
+  
+# 随机种子
+seed: 42

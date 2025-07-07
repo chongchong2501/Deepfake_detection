@@ -4,6 +4,7 @@ import os
 import torch
 import random
 import numpy as np
+import yaml
 from pathlib import Path
 
 class Config:
@@ -18,7 +19,7 @@ class Config:
     RESULTS_DIR = OUTPUT_DIR / "results"   # 结果保存目录
     DATA_CACHE_DIR = OUTPUT_DIR / "data"   # 数据缓存目录
     
-    # 数据配置
+    # 数据配置（默认值，可被YAML配置覆盖）
     DATA_DIR = DATA_ROOT  # 数据目录
     MAX_VIDEOS_PER_CLASS = 500  # 每类最大视频数
     MAX_FRAMES = 16  # 每个视频提取的最大帧数
@@ -63,6 +64,84 @@ class Config:
     RANDOM_SEED = 42
     
     @classmethod
+    def load_config(cls, config_path=None):
+        """从YAML文件加载配置"""
+        if config_path is None:
+            config_path = cls.PROJECT_ROOT / "configs" / "default.yaml"
+        
+        config_path = Path(config_path)
+        if not config_path.exists():
+            print(f"⚠️ 配置文件不存在: {config_path}，使用默认配置")
+            return
+        
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                yaml_config = yaml.safe_load(f)
+            
+            print(f"📋 加载配置文件: {config_path}")
+            
+            # 更新数据配置
+            if 'data' in yaml_config:
+                data_config = yaml_config['data']
+                if 'max_videos_per_class' in data_config:
+                    cls.MAX_VIDEOS_PER_CLASS = data_config['max_videos_per_class']
+                    print(f"  ✓ max_videos_per_class: {cls.MAX_VIDEOS_PER_CLASS}")
+                if 'max_frames' in data_config:
+                    cls.MAX_FRAMES = data_config['max_frames']
+                    print(f"  ✓ max_frames: {cls.MAX_FRAMES}")
+                if 'frame_size' in data_config:
+                    cls.FRAME_SIZE = tuple(data_config['frame_size'])
+                    print(f"  ✓ frame_size: {cls.FRAME_SIZE}")
+                if 'train_split' in data_config:
+                    cls.TRAIN_RATIO = data_config['train_split']
+                if 'val_split' in data_config:
+                    cls.VAL_RATIO = data_config['val_split']
+                if 'test_split' in data_config:
+                    cls.TEST_RATIO = data_config['test_split']
+            
+            # 更新训练配置
+            if 'training' in yaml_config:
+                training_config = yaml_config['training']
+                if 'epochs' in training_config:
+                    cls.NUM_EPOCHS = training_config['epochs']
+                if 'batch_size' in training_config:
+                    cls.BATCH_SIZE = training_config['batch_size']
+                if 'learning_rate' in training_config:
+                    cls.LEARNING_RATE = training_config['learning_rate']
+                if 'weight_decay' in training_config:
+                    cls.WEIGHT_DECAY = training_config['weight_decay']
+            
+            # 更新模型配置
+            if 'model' in yaml_config:
+                model_config = yaml_config['model']
+                if 'backbone' in model_config:
+                    cls.BACKBONE = model_config['backbone']
+                if 'hidden_dim' in model_config:
+                    cls.HIDDEN_DIM = model_config['hidden_dim']
+                if 'num_layers' in model_config:
+                    cls.NUM_LSTM_LAYERS = model_config['num_layers']
+                if 'dropout' in model_config:
+                    cls.DROPOUT = model_config['dropout']
+                if 'use_attention' in model_config:
+                    cls.USE_ATTENTION = model_config['use_attention']
+            
+            # 更新数据加载配置
+            if 'dataloader' in yaml_config:
+                dataloader_config = yaml_config['dataloader']
+                if 'num_workers' in dataloader_config:
+                    cls.NUM_WORKERS = dataloader_config['num_workers']
+                if 'pin_memory' in dataloader_config:
+                    cls.PIN_MEMORY = dataloader_config['pin_memory']
+                if 'prefetch_factor' in dataloader_config:
+                    cls.PREFETCH_FACTOR = dataloader_config['prefetch_factor']
+            
+            print("✅ 配置文件加载完成")
+            
+        except Exception as e:
+            print(f"❌ 加载配置文件失败: {e}")
+            print("使用默认配置")
+    
+    @classmethod
     def setup_environment(cls):
         """设置环境和随机种子"""
         # 设置随机种子
@@ -103,6 +182,9 @@ class Config:
         """打印配置信息"""
         print("\n=== 项目配置信息 ===")
         print(f"数据路径: {cls.DATA_ROOT}")
+        print(f"每类最大视频数: {cls.MAX_VIDEOS_PER_CLASS}")
+        print(f"最大帧数: {cls.MAX_FRAMES}")
+        print(f"帧尺寸: {cls.FRAME_SIZE}")
         print(f"模型: {cls.BACKBONE} + LSTM + Attention")
         print(f"批次大小: {cls.BATCH_SIZE}")
         print(f"训练轮数: {cls.NUM_EPOCHS}")

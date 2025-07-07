@@ -78,7 +78,13 @@ def main():
     # 设置随机种子
     set_random_seed()
     
-    # 更新配置
+    # 加载配置文件（在命令行参数覆盖之前）
+    if args.config:
+        config.load_config(args.config)
+    else:
+        config.load_config()  # 使用默认配置文件
+    
+    # 更新配置（命令行参数优先级更高）
     if args.data_dir:
         config.DATA_DIR = Path(args.data_dir)
     if args.output_dir:
@@ -118,7 +124,7 @@ def main():
     print("\n📊 准备数据...")
     train_data, val_data, test_data = prepare_data(
         data_dir=config.DATA_DIR,
-        max_videos_per_class=config.MAX_VIDEOS_PER_CLASS if args.debug else None,
+        max_videos_per_class=None,  # 使用配置文件中的值
         force_reprocess=False
     )
     

@@ -4,7 +4,7 @@
 # 数据配置
 data:
   data_dir: "./data"  # 数据目录
-  max_videos_per_class: 500  # 每类最大视频数
+  max_videos_per_class: 250  # 每类最大视频数
   max_frames: 32  # 每个视频最大帧数
   frame_size: [224, 224]  # 帧尺寸
   train_split: 0.7  # 训练集比例

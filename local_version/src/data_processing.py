@@ -289,10 +289,13 @@ class VideoProcessor:
         print(f"数据集已保存到: {filename}")
         return df
 
-def prepare_data(data_dir=None, max_videos_per_class=250, force_reprocess=False):
+def prepare_data(data_dir=None, max_videos_per_class=None, force_reprocess=False):
     """数据准备主函数"""
     if data_dir is None:
         data_dir = config.DATA_ROOT
+    
+    if max_videos_per_class is None:
+        max_videos_per_class = config.MAX_VIDEOS_PER_CLASS
     
     # 检查是否已有处理好的数据
     train_csv = config.DATA_CACHE_DIR / "train.csv"

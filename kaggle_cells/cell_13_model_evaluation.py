@@ -6,7 +6,8 @@ print("=" * 60)
 # 加载最佳模型
 print("🔄 加载最佳模型...")
 try:
-    checkpoint = torch.load('./models/best_model.pth', map_location=device)
+    # 使用weights_only=False来兼容旧版本的模型文件
+    checkpoint = torch.load('./models/best_model.pth', map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     best_epoch = checkpoint['epoch']
     best_val_acc = checkpoint['best_val_acc']
@@ -74,6 +75,9 @@ print(f"伪造视频检测准确率: {fake_accuracy:.4f} ({fake_accuracy*100:.2f
 
 # 生成可视化图表
 print("\n📊 生成评估图表...")
+
+# 确保结果目录存在
+os.makedirs('./results/evaluation', exist_ok=True)
 
 # 绘制增强混淆矩阵
 plot_enhanced_confusion_matrix(

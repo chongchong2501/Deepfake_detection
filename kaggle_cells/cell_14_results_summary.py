@@ -3,6 +3,9 @@
 print("💾 保存实验结果...")
 print("=" * 60)
 
+# 确保结果目录存在
+os.makedirs('./results', exist_ok=True)
+
 # 准备保存的结果数据
 results_summary = {
     'experiment_info': {
@@ -164,7 +167,7 @@ print("\n🚀 可以使用以下代码加载训练好的模型进行推理:")
 print("""
 # 加载模型
 model = OptimizedDeepfakeDetector(...)
-checkpoint = torch.load('./models/best_model.pth')
+checkpoint = torch.load('./models/best_model.pth', weights_only=False)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 """)

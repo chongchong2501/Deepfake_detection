@@ -24,9 +24,11 @@ print(f"模型总参数数量: {total_params:,}")
 print(f"可训练参数数量: {trainable_params:,}")
 print(f"模型大小估计: {total_params * 4 / 1024**2:.1f} MB")
 
-# 损失函数
-criterion = FocalLoss(alpha=0.25, gamma=2.0)
-print(f"损失函数: FocalLoss")
+# 损失函数 - 针对严重类别不平衡优化
+# 计算类别权重（假设真实视频是少数类）
+pos_weight = torch.tensor([3.0]).to(device)  # 给真实视频更高权重
+criterion = FocalLoss(alpha=0.75, gamma=3.0, pos_weight=pos_weight)  # 增强对困难样本的关注
+print(f"损失函数: FocalLoss (alpha=0.75, gamma=3.0, pos_weight=3.0)")
 
 # 优化器
 base_lr = 0.001

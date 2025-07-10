@@ -9,8 +9,19 @@ val_transform = None
 print(f"🔧 创建数据集（Kaggle T4优化配置）...")
 print(f"📊 数据类型: FP32 (兼容性优先)")
 
+# 优先使用重采样后的平衡数据集
+balanced_train_file = './data/train_balanced.csv'
+original_train_file = './data/train.csv'
+
+if os.path.exists(balanced_train_file):
+    train_csv_file = balanced_train_file
+    print("🔄 使用重采样后的平衡训练数据集")
+else:
+    train_csv_file = original_train_file
+    print("📊 使用原始训练数据集")
+
 train_dataset = DeepfakeVideoDataset(
-    csv_file='./data/train.csv',
+    csv_file=train_csv_file,
     transform=train_transform,
     max_frames=16,
     gpu_preprocessing=True,    # 启用GPU预处理

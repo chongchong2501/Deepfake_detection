@@ -57,6 +57,26 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scaler=None):
         auc_score = roc_auc_score(all_targets, all_preds)
     except:
         auc_score = 0.0
+    
+    # 计算类别平衡指标
+    all_preds_binary = (np.array(all_preds) > 0.5).astype(int)
+    all_targets_array = np.array(all_targets)
+    
+    # 计算每个类别的指标
+    real_mask = all_targets_array == 0
+    fake_mask = all_targets_array == 1
+    
+    if np.sum(real_mask) > 0:
+        real_acc = np.mean(all_preds_binary[real_mask] == all_targets_array[real_mask])
+    else:
+        real_acc = 0.0
+        
+    if np.sum(fake_mask) > 0:
+        fake_acc = np.mean(all_preds_binary[fake_mask] == all_targets_array[fake_mask])
+    else:
+        fake_acc = 0.0
+    
+    print(f"  类别准确率 - 真实: {real_acc*100:.1f}%, 伪造: {fake_acc*100:.1f}%")
 
     return avg_loss, accuracy, auc_score
 
@@ -109,6 +129,26 @@ def validate_epoch(model, val_loader, criterion, device, scaler=None):
         auc_score = roc_auc_score(all_targets, all_preds)
     except:
         auc_score = 0.0
+    
+    # 计算类别平衡指标
+    all_preds_binary = (np.array(all_preds) > 0.5).astype(int)
+    all_targets_array = np.array(all_targets)
+    
+    # 计算每个类别的指标
+    real_mask = all_targets_array == 0
+    fake_mask = all_targets_array == 1
+    
+    if np.sum(real_mask) > 0:
+        real_acc = np.mean(all_preds_binary[real_mask] == all_targets_array[real_mask])
+    else:
+        real_acc = 0.0
+        
+    if np.sum(fake_mask) > 0:
+        fake_acc = np.mean(all_preds_binary[fake_mask] == all_targets_array[fake_mask])
+    else:
+        fake_acc = 0.0
+    
+    print(f"  类别准确率 - 真实: {real_acc*100:.1f}%, 伪造: {fake_acc*100:.1f}%")
 
     return avg_loss, accuracy, auc_score
 

@@ -3,18 +3,22 @@
 class FocalLoss(nn.Module):
     """焦点损失函数 - 解决类别不平衡问题"""
     
-    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+    def __init__(self, alpha=0.25, gamma=2.5, pos_weight=None, reduction='mean'):
         super(FocalLoss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
+        self.pos_weight = pos_weight
         self.reduction = reduction
 
     def forward(self, inputs, targets):
-        # 使用 BCEWithLogitsLoss 以兼容 autocast
-        ce_loss = nn.BCEWithLogitsLoss(reduction='none')(inputs, targets)
+        # 使用 BCEWithLogitsLoss 以兼容 autocast，支持pos_weight
+        ce_loss = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight, reduction='none')(inputs, targets)
         # 计算概率用于focal weight
         pt = torch.exp(-ce_loss)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
+        
+        # 动态alpha：对于正样本使用alpha，负样本使用(1-alpha)
+        alpha_t = self.alpha * targets + (1 - self.alpha) * (1 - targets)
+        focal_loss = alpha_t * (1 - pt) ** self.gamma * ce_loss
 
         if self.reduction == 'mean':
             return focal_loss.mean()

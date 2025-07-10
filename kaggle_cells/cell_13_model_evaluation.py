@@ -122,6 +122,11 @@ plt.savefig('./results/evaluation/score_distribution.png', dpi=300, bbox_inches=
 plt.show()
 
 print("✅ 评估图表生成完成")
+
+# 生成详细的类别不平衡分析报告
+generate_class_imbalance_report(metrics)
+
 print("=" * 60)
 print("🎉 模型评估完成！")
 print("📁 所有结果已保存到 ./results/evaluation/ 目录")
+print("\n💡 如果发现严重的类别偏向问题，请参考上述改进建议进行优化")

@@ -26,6 +26,7 @@ from dataset import create_data_loaders
 from model import create_model
 from utils import FocalLoss, EarlyStopping, set_random_seed, format_time
 from training import Trainer
+from memory_manager import MemoryManager, print_memory_info, get_memory_suggestions
 
 def parse_args():
     """解析命令行参数"""
@@ -120,6 +121,15 @@ def main():
     config.print_config()
     print("="*60)
     
+    # 显示内存状态和优化建议
+    print("\n📊 训练前内存状态:")
+    print_memory_info()
+    suggestions = get_memory_suggestions()
+    if len(suggestions) > 1 or "内存使用状况良好" not in suggestions[0]:
+        print("\n💡 内存优化建议:")
+        for suggestion in suggestions:
+            print(f"   {suggestion}")
+    
     # 数据准备
     print("\n📊 准备数据...")
     train_data, val_data, test_data = prepare_data(
@@ -201,10 +211,11 @@ def main():
         early_stopping=early_stopping
     )
     
-    # 开始训练
-    print("\n🎯 开始训练...")
+    # 开始训练（使用内存管理）
+    print("\n🎯 开始训练（带智能内存管理）...")
     try:
-        history = trainer.train(
+        # 使用带内存管理的训练方法
+        history = trainer.start_training_with_memory_management(
             num_epochs=config.NUM_EPOCHS - start_epoch,
             save_dir=output_dir / 'models'
         )
@@ -225,6 +236,10 @@ def main():
             'history': history
         }, final_model_path)
         print(f"🎯 最终模型已保存到: {final_model_path}")
+        
+        # 显示训练后的内存状态
+        print("\n📊 训练后内存状态:")
+        print_memory_info()
         
         print("\n✅ 训练完成!")
         

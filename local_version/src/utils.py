@@ -70,9 +70,17 @@ class EarlyStopping:
         return self.best_loss
 
 class PerformanceMonitor:
-    """性能监控器"""
+    """性能监控器（增强版）"""
     
     def __init__(self):
+        # 尝试集成新的内存管理器
+        try:
+            from memory_manager import get_memory_manager
+            self.memory_manager = get_memory_manager()
+            self.enhanced_monitoring = True
+        except ImportError:
+            self.memory_manager = None
+            self.enhanced_monitoring = False
         self.reset()
     
     def reset(self):
@@ -82,14 +90,20 @@ class PerformanceMonitor:
         self.gpu_usage_history = []
     
     def update(self):
-        # CPU使用率
-        cpu_percent = psutil.cpu_percent()
-        self.cpu_usage_history.append(cpu_percent)
-        
-        # GPU内存使用
-        if torch.cuda.is_available():
-            gpu_memory = torch.cuda.memory_allocated() / 1024**3  # GB
+        if self.enhanced_monitoring and self.memory_manager:
+            # 使用增强的内存管理器
+            stats = self.memory_manager.get_memory_stats()
+            self.cpu_usage_history.append(stats.cpu_percent)
+            gpu_memory = stats.gpu_memory_allocated_gb
             self.gpu_memory_peak = max(self.gpu_memory_peak, gpu_memory)
+        else:
+            # 回退到原始实现
+            cpu_percent = psutil.cpu_percent()
+            self.cpu_usage_history.append(cpu_percent)
+            
+            if torch.cuda.is_available():
+                gpu_memory = torch.cuda.memory_allocated() / 1024**3  # GB
+                self.gpu_memory_peak = max(self.gpu_memory_peak, gpu_memory)
     
     def get_stats(self):
         elapsed_time = time.time() - self.start_time
@@ -101,11 +115,35 @@ class PerformanceMonitor:
             'peak_gpu_memory_gb': self.gpu_memory_peak
         }
         
-        if torch.cuda.is_available():
+        # 如果有增强监控，添加更多统计信息
+        if self.enhanced_monitoring and self.memory_manager:
+            current_stats = self.memory_manager.get_memory_stats()
+            stats.update({
+                'current_gpu_memory_gb': current_stats.gpu_memory_allocated_gb,
+                'current_cpu_memory_gb': current_stats.cpu_memory_gb,
+                'gpu_memory_percent': current_stats.gpu_memory_percent,
+                'cpu_memory_percent': current_stats.cpu_memory_percent
+            })
+        elif torch.cuda.is_available():
             stats['current_gpu_memory_gb'] = torch.cuda.memory_allocated() / 1024**3
             stats['max_gpu_memory_gb'] = torch.cuda.max_memory_allocated() / 1024**3
         
         return stats
+    
+    def get_memory_suggestions(self):
+        """获取内存优化建议"""
+        if self.enhanced_monitoring and self.memory_manager:
+            return self.memory_manager.get_optimization_suggestions()
+        else:
+            # 基础建议
+            suggestions = []
+            if self.gpu_memory_peak > 10:  # 假设12GB显卡
+                suggestions.append("🟡 GPU内存使用较高，建议减小batch_size")
+            if len(self.cpu_usage_history) > 0 and max(self.cpu_usage_history) > 90:
+                suggestions.append("🟡 CPU使用率过高，建议减少num_workers")
+            if not suggestions:
+                suggestions.append("✅ 系统资源使用正常")
+            return suggestions
 
 def get_transforms(mode='train', image_size=None):
     """获取数据变换"""
@@ -195,21 +233,32 @@ def load_model_checkpoint(filepath, model, optimizer=None, scheduler=None):
     return epoch, loss, accuracy, auc
 
 def print_gpu_memory_info():
-    """打印GPU内存信息"""
-    if torch.cuda.is_available():
-        allocated = torch.cuda.memory_allocated() / 1024**3
-        cached = torch.cuda.memory_reserved() / 1024**3
-        max_allocated = torch.cuda.max_memory_allocated() / 1024**3
-        
-        print(f"GPU内存 - 已分配: {allocated:.2f}GB, 已缓存: {cached:.2f}GB, 峰值: {max_allocated:.2f}GB")
-    else:
-        print("CUDA不可用")
+    """打印GPU内存信息（兼容旧版本）"""
+    try:
+        from memory_manager import print_memory_info
+        print_memory_info()
+    except ImportError:
+        # 回退到原始实现
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 1024**3
+            cached = torch.cuda.memory_reserved() / 1024**3
+            max_allocated = torch.cuda.max_memory_allocated() / 1024**3
+            
+            print(f"GPU内存 - 已分配: {allocated:.2f}GB, 已缓存: {cached:.2f}GB, 峰值: {max_allocated:.2f}GB")
+        else:
+            print("CUDA不可用")
 
 def cleanup_gpu_memory():
-    """清理GPU内存"""
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
+    """清理GPU内存（兼容旧版本）"""
+    try:
+        from memory_manager import cleanup_memory
+        return cleanup_memory()
+    except ImportError:
+        # 回退到原始实现
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        return 0.0
 
 def set_random_seed(seed=None):
     """设置随机种子"""

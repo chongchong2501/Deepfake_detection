@@ -6,6 +6,7 @@ import pandas as pd
 from torch.utils.data import Dataset
 from config import config
 from data_processing import VideoProcessor
+from memory_manager import auto_memory_management, cleanup_memory
 
 class DeepfakeVideoDataset(Dataset):
     """深度伪造视频数据集类 - RTX4070优化版本"""
@@ -108,19 +109,40 @@ class DeepfakeVideoDataset(Dataset):
         
         return frames[:self.max_frames]
     
+    @auto_memory_management(cleanup_interval=100)
     def _gpu_preprocess(self, frames):
-        """GPU预处理"""
-        # 转换为tensor
-        frames_array = np.stack(frames)  # (T, H, W, C)
-        video_tensor = torch.from_numpy(frames_array).permute(0, 3, 1, 2).float()  # (T, C, H, W)
-        
-        # 移动到GPU并进行预处理
-        video_tensor = video_tensor.to(self.device, non_blocking=True, dtype=torch.float32) / 255.0
-        
-        # 标准化
-        video_tensor = (video_tensor - self.mean.view(1, 3, 1, 1)) / self.std.view(1, 3, 1, 1)
-        
-        return video_tensor
+        """GPU预处理（带内存管理）"""
+        try:
+            # 转换为tensor
+            frames_array = np.stack(frames)  # (T, H, W, C)
+            video_tensor = torch.from_numpy(frames_array).permute(0, 3, 1, 2).float()  # (T, C, H, W)
+            
+            # 移动到GPU并进行预处理
+            video_tensor = video_tensor.to(self.device, non_blocking=True, dtype=torch.float32) / 255.0
+            
+            # 标准化
+            video_tensor = (video_tensor - self.mean.view(1, 3, 1, 1)) / self.std.view(1, 3, 1, 1)
+            
+            return video_tensor
+            
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                print(f"🚨 GPU内存不足，清理缓存后重试...")
+                cleanup_memory(force=True)
+                self.clear_cache()
+                # 重试一次
+                try:
+                    frames_array = np.stack(frames)
+                    video_tensor = torch.from_numpy(frames_array).permute(0, 3, 1, 2).float()
+                    video_tensor = video_tensor.to(self.device, non_blocking=True, dtype=torch.float32) / 255.0
+                    video_tensor = (video_tensor - self.mean.view(1, 3, 1, 1)) / self.std.view(1, 3, 1, 1)
+                    return video_tensor
+                except:
+                    print(f"GPU预处理重试失败，回退到CPU")
+                    return self._cpu_preprocess(frames)
+            else:
+                print(f"GPU预处理失败: {e}，回退到CPU")
+                return self._cpu_preprocess(frames)
     
     def _cpu_preprocess(self, frames):
         """CPU预处理"""
@@ -148,13 +170,42 @@ class DeepfakeVideoDataset(Dataset):
     def clear_cache(self):
         """清空缓存"""
         if self.frame_cache:
+            cache_size_before = len(self.frame_cache)
             self.frame_cache.clear()
-            print("缓存已清空")
+            
+            # 强制垃圾回收
+            import gc
+            gc.collect()
+            
+            # 清理GPU内存
+            cleanup_memory()
+            
+            print(f"🧹 缓存已清空: 释放了{cache_size_before}个缓存项")
 
 def create_data_loaders(train_data, val_data, test_data, batch_size=None, quick_mode=False):
-    """创建数据加载器"""
+    """创建数据加载器（带内存管理）"""
     if batch_size is None:
         batch_size = config.BATCH_SIZE
+    
+    # 内存优化：根据可用内存调整参数
+    try:
+        from memory_manager import get_memory_manager
+        memory_manager = get_memory_manager()
+        stats = memory_manager.get_memory_stats()
+        
+        # 根据内存使用情况自动调整参数
+        if stats.gpu_memory_percent > 0.7:
+            print("⚠️ GPU内存使用率较高，自动优化参数")
+            if batch_size > 4:
+                batch_size = max(4, batch_size // 2)
+                print(f"   batch_size调整为: {batch_size}")
+            quick_mode = True
+        
+        if stats.cpu_memory_percent > 0.8:
+            print("⚠️ CPU内存使用率较高，自动优化参数")
+            quick_mode = True
+    except ImportError:
+        print("内存管理器不可用，使用默认设置")
     
     # 在快速模式下禁用GPU预处理和缓存以节省内存
     gpu_preprocessing = not quick_mode

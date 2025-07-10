@@ -1,0 +1,127 @@
+# 内存优化配置 - RTX4070专用
+# 针对12GB显存和内存限制进行深度优化
+
+# 数据配置
+data:
+  max_videos_per_class: 80  # 减少数据量以节省内存
+  max_frames: 20            # 适中的帧数
+  target_size: [224, 224]   # 标准输入尺寸
+  quality_threshold: 15     # 降低质量阈值以保留更多帧
+
+# 模型配置
+model:
+  backbone: "resnet18"      # 使用更轻量的骨干网络
+  hidden_dim: 256          # 减少隐藏层维度
+  num_layers: 2            # 减少层数
+  dropout: 0.3             # 适中的dropout
+  use_attention: true      # 保持注意力机制
+  attention_heads: 4       # 减少注意力头数
+  attention_dim: 128       # 减少注意力维度
+
+# 训练配置
+training:
+  epochs: 30               # 减少训练轮数
+  batch_size: 4            # 小批次大小以节省显存
+  learning_rate: 0.0005    # 稍低的学习率
+  weight_decay: 0.0001     # 轻微的权重衰减
+  gradient_clip_norm: 0.5  # 梯度裁剪
+  
+  # 优化器配置
+  optimizer: "adamw"       # 使用AdamW优化器
+  scheduler: "cosine"      # 余弦退火调度器
+  warmup_epochs: 2         # 预热轮数
+  
+  # 早停配置
+  early_stopping:
+    patience: 8            # 早停耐心值
+    min_delta: 0.001       # 最小改善阈值
+    restore_best_weights: true
+
+# 数据加载配置
+dataloader:
+  num_workers: 3           # 减少工作进程数
+  pin_memory: false        # 禁用pin_memory以避免CUDA错误
+  persistent_workers: true # 保持工作进程
+  prefetch_factor: 1       # 减少预取因子
+  drop_last: true          # 丢弃最后不完整的批次
+
+# GPU配置
+gpu:
+  use_mixed_precision: true    # 启用混合精度训练
+  memory_fraction: 0.8         # GPU内存使用比例
+  allow_growth: true           # 允许内存增长
+  
+  # 内存管理配置
+  memory_management:
+    gpu_threshold: 0.75        # GPU内存阈值
+    cpu_threshold: 0.75        # CPU内存阈值
+    auto_cleanup_interval: 25  # 自动清理间隔
+    enable_monitoring: true    # 启用内存监控
+    force_cleanup_every: 100   # 强制清理间隔
+
+# 数据增强配置（轻量化）
+augmentation:
+  horizontal_flip: 0.3     # 减少水平翻转概率
+  rotation: 5              # 减少旋转角度
+  brightness: 0.1          # 减少亮度变化
+  contrast: 0.1            # 减少对比度变化
+  saturation: 0.1          # 减少饱和度变化
+  hue: 0.05                # 减少色调变化
+  gaussian_blur: 0.2       # 减少高斯模糊概率
+  
+# 缓存配置
+cache:
+  enable_frame_cache: false    # 禁用帧缓存以节省内存
+  enable_gpu_preprocess: false # 禁用GPU预处理缓存
+  max_cache_size: 100          # 最大缓存大小
+  cache_cleanup_threshold: 0.8 # 缓存清理阈值
+
+# 验证配置
+validation:
+  val_split: 0.15          # 验证集比例
+  test_split: 0.15         # 测试集比例
+  stratify: true           # 分层采样
+  
+# 日志配置
+logging:
+  log_interval: 20         # 日志间隔
+  save_interval: 5         # 保存间隔
+  memory_log_interval: 10  # 内存日志间隔
+  
+# 输出配置
+output:
+  save_best_only: true     # 只保存最佳模型
+  save_optimizer: false    # 不保存优化器状态
+  save_scheduler: false    # 不保存调度器状态
+  
+# 特殊优化标志
+optimization:
+  quick_mode: false        # 不使用快速模式
+  memory_efficient: true   # 启用内存高效模式
+  gradient_accumulation: 2 # 梯度累积步数
+  checkpoint_segments: 4   # 检查点分段数
+  
+# 实验配置
+experiment:
+  name: "memory_optimized_rtx4070"
+  description: "RTX4070显卡内存优化配置"
+  tags: ["memory_optimized", "rtx4070", "efficient"]
+  
+# 硬件特定配置
+hardware:
+  target_gpu: "RTX4070"    # 目标GPU
+  gpu_memory_gb: 12        # GPU内存大小
+  recommended_ram_gb: 16   # 推荐RAM大小
+  
+# 性能预期
+performance:
+  expected_gpu_usage: "75-85%"     # 预期GPU使用率
+  expected_training_time: "2-3h"   # 预期训练时间
+  expected_memory_peak: "9-10GB"   # 预期内存峰值
+  
+# 故障排除
+troubleshooting:
+  oom_recovery: true       # OOM恢复
+  auto_batch_size: true    # 自动批次大小调整
+  fallback_cpu: true       # CPU回退
+  memory_profiling: false  # 内存分析（调试用）

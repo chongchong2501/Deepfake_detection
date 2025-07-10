@@ -16,6 +16,7 @@ from utils import (
     calculate_accuracy, calculate_auc, PerformanceMonitor,
     save_model_checkpoint, print_gpu_memory_info, cleanup_gpu_memory
 )
+from memory_manager import MemoryManager, auto_memory_management
 
 class Trainer:
     """训练器类 - RTX4070优化版本"""
@@ -36,6 +37,18 @@ class Trainer:
         
         # 性能监控
         self.monitor = PerformanceMonitor()
+        
+        # 内存管理器
+        self.memory_manager = MemoryManager(
+            gpu_memory_threshold=0.85,
+            cpu_memory_threshold=0.80,
+            auto_cleanup_interval=30.0,
+            enable_monitoring=True
+        )
+        
+        # 注册内存清理回调
+        self.memory_manager.register_cleanup_callback(self._cleanup_training_cache)
+        self.memory_manager.register_warning_callback(self._memory_warning_handler)
         
         # 训练历史
         self.history = {
@@ -108,9 +121,9 @@ class Trainer:
                 'Acc': f'{current_acc:.2f}%'
             })
             
-            # 定期清理GPU缓存
+            # 定期清理GPU缓存和内存监控
             if batch_idx % 50 == 0:
-                cleanup_gpu_memory()
+                self.memory_manager.smart_cleanup()
                 self.monitor.update()
         
         avg_loss = total_loss / len(self.train_loader)
@@ -166,7 +179,7 @@ class Trainer:
                 
                 # 定期清理GPU缓存
                 if batch_idx % 50 == 0:
-                    cleanup_gpu_memory()
+                    self.memory_manager.cleanup_gpu_memory()
         
         avg_loss = total_loss / len(self.val_loader)
         accuracy = 100. * correct / total
@@ -235,9 +248,14 @@ class Trainer:
                     print(f"\n早停触发，在第{epoch+1}轮停止训练")
                     break
             
-            # 内存监控
+            # 内存监控和优化建议
             if epoch % 5 == 0:
-                print_gpu_memory_info()
+                self.memory_manager.print_memory_report()
+                suggestions = self.memory_manager.get_optimization_suggestions()
+                if len(suggestions) > 1 or "内存使用状况良好" not in suggestions[0]:
+                    print("💡 内存优化建议:")
+                    for suggestion in suggestions:
+                        print(f"   {suggestion}")
         
         # 训练完成统计
         stats = self.monitor.get_stats()
@@ -247,6 +265,42 @@ class Trainer:
         print(f"峰值GPU内存: {stats['peak_gpu_memory_gb']:.2f}GB")
         
         return self.history
+    
+    def _cleanup_training_cache(self):
+        """训练缓存清理回调"""
+        try:
+            # 清理模型缓存
+            if hasattr(self.model, 'clear_cache'):
+                self.model.clear_cache()
+            
+            # 清理优化器状态（谨慎使用）
+            if hasattr(self.optimizer, 'zero_grad'):
+                self.optimizer.zero_grad(set_to_none=True)
+            
+            # 清理数据加载器缓存
+            if hasattr(self.train_loader.dataset, 'clear_cache'):
+                self.train_loader.dataset.clear_cache()
+            if hasattr(self.val_loader.dataset, 'clear_cache'):
+                self.val_loader.dataset.clear_cache()
+            
+            print("🧹 训练缓存已清理")
+        except Exception as e:
+            print(f"训练缓存清理失败: {e}")
+    
+    def _memory_warning_handler(self, message: str):
+        """内存警告处理回调"""
+        print(f"⚠️ 内存警告: {message}")
+        
+        # 自动降低batch size（如果可能）
+        if "GPU内存严重不足" in message:
+            current_batch_size = self.train_loader.batch_size
+            if current_batch_size > 1:
+                print(f"🔧 建议将batch_size从{current_batch_size}降低到{current_batch_size//2}")
+    
+    def start_training_with_memory_management(self, num_epochs, save_dir=None):
+        """带内存管理的训练流程"""
+        with self.memory_manager:
+            return self.train(num_epochs, save_dir)
 
 class Evaluator:
     """评估器类"""

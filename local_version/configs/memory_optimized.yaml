@@ -1,30 +1,38 @@
-# 内存优化配置 - RTX4070专用
-# 针对12GB显存和内存限制进行深度优化
+# RTX4070 笔记本内存优化配置 v2.0
+# 专为8GB显存和有限系统内存设计
+# 解决重复输出、GPU读取失败、频繁清理问题
 
-# 数据配置
+# 基础路径配置
+BASE_PATH: "E:/program/Deepfake"
+DATA_PATH: "E:/program/Deepfake/dataset/FaceForensics++_C23"
+OUTPUT_PATH: "E:/program/Deepfake/local_version/outputs"
+
+# 数据配置 - 进一步优化内存使用
 data:
-  max_videos_per_class: 80  # 减少数据量以节省内存
-  max_frames: 20            # 适中的帧数
+  max_videos_per_class: 60  # 进一步减少视频数量
+  max_frames: 16            # 减少帧数到16
   target_size: [224, 224]   # 标准输入尺寸
   quality_threshold: 15     # 降低质量阈值以保留更多帧
+  VIDEO_EXTENSIONS: [".mp4", ".avi", ".mov"]
 
-# 模型配置
+# 模型配置 - 使用轻量级模型
 model:
-  backbone: "resnet18"      # 使用更轻量的骨干网络
+  backbone: "resnet18"      # 使用最轻量的ResNet
   hidden_dim: 256          # 减少隐藏层维度
-  num_layers: 2            # 减少层数
+  num_layers: 1            # 减少LSTM层数
   dropout: 0.3             # 适中的dropout
   use_attention: true      # 保持注意力机制
   attention_heads: 4       # 减少注意力头数
   attention_dim: 128       # 减少注意力维度
 
-# 训练配置
+# 训练配置 - 内存优化
 training:
   epochs: 30               # 减少训练轮数
-  batch_size: 4            # 小批次大小以节省显存
+  batch_size: 2            # 进一步减小批次大小
   learning_rate: 0.0005    # 稍低的学习率
   weight_decay: 0.0001     # 轻微的权重衰减
   gradient_clip_norm: 0.5  # 梯度裁剪
+  use_mixed_precision: true # 启用混合精度训练
   
   # 优化器配置
   optimizer: "adamw"       # 使用AdamW优化器
@@ -33,31 +41,34 @@ training:
   
   # 早停配置
   early_stopping:
-    patience: 8            # 早停耐心值
+    patience: 7            # 早停耐心值
     min_delta: 0.001       # 最小改善阈值
     restore_best_weights: true
 
-# 数据加载配置
+# 数据加载配置 - 内存友好
 dataloader:
-  num_workers: 3           # 减少工作进程数
-  pin_memory: false        # 禁用pin_memory以避免CUDA错误
-  persistent_workers: true # 保持工作进程
+  num_workers: 0           # 设置为0避免Windows多进程序列化错误
+  pin_memory: false        # 禁用pin_memory节省内存
+  persistent_workers: false # 禁用持久worker
   prefetch_factor: 1       # 减少预取因子
   drop_last: true          # 丢弃最后不完整的批次
 
 # GPU配置
 gpu:
   use_mixed_precision: true    # 启用混合精度训练
-  memory_fraction: 0.8         # GPU内存使用比例
+  memory_fraction: 0.75        # 降低GPU内存使用比例
   allow_growth: true           # 允许内存增长
+  device: "cuda"
+  gpu_id: 0
   
   # 内存管理配置
   memory_management:
-    gpu_threshold: 0.75        # GPU内存阈值
-    cpu_threshold: 0.75        # CPU内存阈值
-    auto_cleanup_interval: 25  # 自动清理间隔
+    gpu_threshold: 0.65        # 降低GPU内存阈值到65%
+    cpu_threshold: 0.85        # 提高CPU内存阈值到85%
+    auto_cleanup_interval: 60  # 增加清理间隔到60秒
     enable_monitoring: true    # 启用内存监控
-    force_cleanup_every: 100   # 强制清理间隔
+    force_cleanup_every: 200   # 增加强制清理间隔
+    verbose_output: false      # 减少输出信息避免重复
 
 # 数据增强配置（轻量化）
 augmentation:

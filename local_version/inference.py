@@ -26,7 +26,7 @@ sys.path.append(str(Path(__file__).parent / 'src'))
 
 from config import config
 from model import create_model
-from data_processing import VideoProcessor
+from video_processor import get_video_processor
 from utils import get_transforms, format_time
 
 def parse_args():
@@ -337,7 +337,11 @@ def main():
         return 1
     
     # 创建视频处理器和变换
-    processor = VideoProcessor()
+    processor = get_video_processor(
+        max_frames=config.MAX_FRAMES,
+        target_size=config.FRAME_SIZE,
+        quality_threshold=20
+    )
     transforms = get_transforms(mode='test')
     
     # 根据输入类型处理

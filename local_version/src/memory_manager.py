@@ -23,18 +23,20 @@ class MemoryStats:
     timestamp: float
 
 class MemoryManager:
-    """智能内存管理器 - RTX4070优化"""
+    """智能内存管理器 - RTX4070优化 v2.0"""
     
     def __init__(self, 
-                 gpu_memory_threshold: float = 0.85,  # GPU内存使用阈值
-                 cpu_memory_threshold: float = 0.80,  # CPU内存使用阈值
-                 auto_cleanup_interval: float = 30.0,  # 自动清理间隔(秒)
-                 enable_monitoring: bool = True):
+                 gpu_memory_threshold: float = 0.75,  # 降低GPU内存使用阈值
+                 cpu_memory_threshold: float = 0.85,  # 提高CPU内存使用阈值
+                 auto_cleanup_interval: float = 60.0,  # 增加自动清理间隔(秒)
+                 enable_monitoring: bool = True,
+                 verbose_output: bool = False):  # 新增：控制输出详细程度
         
         self.gpu_memory_threshold = gpu_memory_threshold
         self.cpu_memory_threshold = cpu_memory_threshold
         self.auto_cleanup_interval = auto_cleanup_interval
         self.enable_monitoring = enable_monitoring
+        self.verbose_output = verbose_output
         
         # 内存统计历史
         self.memory_history: deque = deque(maxlen=1000)
@@ -47,6 +49,10 @@ class MemoryManager:
         self.cleanup_callbacks: List[Callable] = []
         self.warning_callbacks: List[Callable] = []
         
+        # 输出控制
+        self.last_cleanup_time = 0
+        self.cleanup_message_interval = 30.0  # 清理消息间隔
+        
         # GPU信息
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         if torch.cuda.is_available():
@@ -57,11 +63,12 @@ class MemoryManager:
         # CPU信息
         self.cpu_total_memory = psutil.virtual_memory().total / (1024**3)
         
-        print(f"🔧 内存管理器初始化完成")
-        print(f"   GPU总内存: {self.gpu_total_memory:.2f}GB")
-        print(f"   CPU总内存: {self.cpu_total_memory:.2f}GB")
-        print(f"   GPU阈值: {gpu_memory_threshold*100:.0f}%")
-        print(f"   CPU阈值: {cpu_memory_threshold*100:.0f}%")
+        if self.verbose_output:
+            print(f"🔧 内存管理器初始化完成")
+            print(f"   GPU总内存: {self.gpu_total_memory:.2f}GB")
+            print(f"   CPU总内存: {self.cpu_total_memory:.2f}GB")
+            print(f"   GPU阈值: {gpu_memory_threshold*100:.0f}%")
+            print(f"   CPU阈值: {cpu_memory_threshold*100:.0f}%")
     
     def get_memory_stats(self) -> MemoryStats:
         """获取当前内存统计信息"""
@@ -120,20 +127,25 @@ class MemoryManager:
         return freed_memory
     
     def cleanup_cpu_memory(self) -> None:
-        """清理CPU内存"""
+        """清理CPU内存（减少重复输出）"""
         # 强制垃圾回收
         collected = gc.collect()
-        if collected > 0:
+        if collected > 0 and self.verbose_output:
             print(f"🧹 CPU内存清理: 回收了 {collected} 个对象")
     
     def smart_cleanup(self) -> Dict[str, float]:
-        """智能内存清理"""
+        """智能内存清理（减少重复输出）"""
         stats = self.get_memory_stats()
         results = {'gpu_freed': 0.0, 'cpu_objects': 0}
+        current_time = time.time()
         
         # GPU内存清理
         if stats.gpu_memory_percent > self.gpu_memory_threshold:
-            print(f"⚠️ GPU内存使用率过高: {stats.gpu_memory_percent*100:.1f}%")
+            # 控制输出频率，避免重复消息
+            if (current_time - self.last_cleanup_time) > self.cleanup_message_interval or self.verbose_output:
+                print(f"⚠️ GPU内存使用率过高: {stats.gpu_memory_percent*100:.1f}%")
+                self.last_cleanup_time = current_time
+            
             results['gpu_freed'] = self.cleanup_gpu_memory(force=True)
             
             # 执行注册的清理回调
@@ -141,11 +153,16 @@ class MemoryManager:
                 try:
                     callback()
                 except Exception as e:
-                    print(f"清理回调执行失败: {e}")
+                    if self.verbose_output:
+                        print(f"清理回调执行失败: {e}")
         
-        # CPU内存清理
+        # CPU内存清理（更智能的阈值检查）
         if stats.cpu_memory_percent > self.cpu_memory_threshold:
-            print(f"⚠️ CPU内存使用率过高: {stats.cpu_memory_percent*100:.1f}%")
+            # 控制输出频率
+            if (current_time - self.last_cleanup_time) > self.cleanup_message_interval or self.verbose_output:
+                print(f"⚠️ CPU内存使用率过高: {stats.cpu_memory_percent*100:.1f}%")
+                self.last_cleanup_time = current_time
+            
             before_objects = len(gc.get_objects())
             self.cleanup_cpu_memory()
             after_objects = len(gc.get_objects())

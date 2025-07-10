@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 from config import config
-from data_processing import VideoProcessor
+from video_processor import get_video_processor, process_video_safe, read_video_safe
 from memory_manager import auto_memory_management, cleanup_memory
 
 class DeepfakeVideoDataset(Dataset):
@@ -34,18 +34,12 @@ class DeepfakeVideoDataset(Dataset):
         self.cache_misses = 0
         
         # 视频处理器
-        self.video_processor = VideoProcessor(
-            max_frames=self.max_frames,
-            target_size=config.FRAME_SIZE
-        )
+        self.video_processor = get_video_processor()
         
         # GPU预处理的标准化参数
         if self.gpu_preprocessing:
             self.mean = torch.tensor([0.485, 0.456, 0.406], device=self.device, dtype=torch.float32)
             self.std = torch.tensor([0.229, 0.224, 0.225], device=self.device, dtype=torch.float32)
-            
-        print(f"🚀 数据集初始化: GPU预处理={'启用' if self.gpu_preprocessing else '禁用'}, "
-              f"缓存={'启用' if self.cache_frames else '禁用'}, 设备={self.device}")
     
     def __len__(self):
         if self.df is not None:
@@ -73,10 +67,17 @@ class DeepfakeVideoDataset(Dataset):
                 frames = self.frame_cache[video_path]
                 self.cache_hits += 1
             else:
-                frames = self.video_processor.extract_frames_gpu_accelerated(video_path)
+                # 使用新的安全视频读取
+                raw_frames = read_video_safe(video_path, max_frames=self.max_frames)
+                if not raw_frames:
+                    # 如果读取失败，返回默认帧
+                    frames = []
+                else:
+                    frames = process_video_safe(raw_frames)
+                
                 self.cache_misses += 1
                 # 缓存帧数据
-                if self.cache_frames and len(frames) > 0:
+                if self.cache_frames and len(frames) > 0 and len(self.frame_cache) < 1000:  # 限制缓存大小
                     self.frame_cache[video_path] = frames
         
         # 确保有足够的帧
@@ -113,6 +114,11 @@ class DeepfakeVideoDataset(Dataset):
     def _gpu_preprocess(self, frames):
         """GPU预处理（带内存管理）"""
         try:
+            # 确保frames是numpy数组
+            if isinstance(frames[0], torch.Tensor):
+                # 如果是tensor，先移动到CPU再转换为numpy
+                frames = [frame.cpu().numpy() if frame.is_cuda else frame.numpy() for frame in frames]
+            
             # 转换为tensor
             frames_array = np.stack(frames)  # (T, H, W, C)
             video_tensor = torch.from_numpy(frames_array).permute(0, 3, 1, 2).float()  # (T, C, H, W)
@@ -146,7 +152,25 @@ class DeepfakeVideoDataset(Dataset):
     
     def _cpu_preprocess(self, frames):
         """CPU预处理"""
-        frames = [torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0 for frame in frames]
+        import cv2
+        
+        # 确保frames是numpy数组
+        if isinstance(frames[0], torch.Tensor):
+            frames = [frame.cpu().numpy() if frame.is_cuda else frame.numpy() for frame in frames]
+        
+        # 调整所有帧到相同尺寸 (224, 224)
+        processed_frames = []
+        for frame in frames:
+            # 确保frame是正确的形状 (H, W, C)
+            if frame.shape[-1] != 3:
+                frame = frame.transpose(1, 2, 0)  # 从 (C, H, W) 转换为 (H, W, C)
+            
+            # 调整尺寸到224x224
+            frame_resized = cv2.resize(frame, (224, 224))
+            processed_frames.append(frame_resized)
+        
+        # 转换为tensor
+        frames = [torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0 for frame in processed_frames]
         video_tensor = torch.stack(frames)
         
         # 标准化
@@ -271,7 +295,7 @@ def create_data_loaders(train_data, val_data, test_data, batch_size=None, quick_
     num_workers = 0 if quick_mode else config.NUM_WORKERS
     pin_memory = False if quick_mode else config.PIN_MEMORY
     prefetch_factor = None if quick_mode else config.PREFETCH_FACTOR  # num_workers=0时必须为None
-    persistent_workers = False if quick_mode else config.PERSISTENT_WORKERS
+    persistent_workers = False if (quick_mode or num_workers == 0) else config.PERSISTENT_WORKERS
     
     # 构建DataLoader参数
     loader_kwargs = {

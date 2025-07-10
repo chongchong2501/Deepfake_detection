@@ -1,177 +1,32 @@
-# 数据处理模块 - 本地RTX4070优化版本
+# 数据处理模块 - 数据集管理功能
 
 import os
-import cv2
-import numpy as np
 import pandas as pd
-import torch
-import torch.nn.functional as F
-from torchvision.io import read_video
-from tqdm import tqdm
-import random
+from typing import List, Tuple, Dict, Optional
+from pathlib import Path
+import warnings
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
+import json
+import random
 from config import config
 
-# 检查PyAV可用性
-try:
-    import av
-    PYAV_AVAILABLE = True
-    print("✅ PyAV已安装，支持GPU视频处理")
-except ImportError:
-    PYAV_AVAILABLE = False
-    print("⚠️ PyAV未安装，视频处理将回退到CPU模式")
+# 导入统一的视频处理器
+from video_processor import get_video_processor
 
-class VideoProcessor:
-    """视频处理类 - RTX4070优化"""
+class DatasetManager:
+    """数据集管理器 - 负责数据集的创建、划分和管理"""
     
     def __init__(self, max_frames=16, target_size=(224, 224), quality_threshold=20):
         self.max_frames = max_frames
         self.target_size = target_size
         self.quality_threshold = quality_threshold
-        self.device = config.get_device()
-    
-    def extract_frames_gpu_accelerated(self, video_path, use_gpu=True):
-        """GPU加速的帧提取函数"""
-        try:
-            # 检查PyAV是否可用
-            if not PYAV_AVAILABLE:
-                print(f"PyAV不可用，使用CPU回退处理: {video_path}")
-                return self.extract_frames_cpu_fallback(video_path)
-                
-            # 使用torchvision的GPU加速视频读取
-            if use_gpu and torch.cuda.is_available():
-                device = self.device
-            else:
-                device = torch.device('cpu')
-                
-            # 读取视频（torchvision自动处理解码）
-            try:
-                video_tensor, audio, info = read_video(video_path, pts_unit='sec')
-                # video_tensor shape: (T, H, W, C)
-            except Exception as e:
-                print(f"GPU视频读取失败，回退到CPU: {e}")
-                return self.extract_frames_cpu_fallback(video_path)
-            
-            if video_tensor.size(0) == 0:
-                return []
-                
-            # 移动到GPU进行处理
-            video_tensor = video_tensor.to(device, non_blocking=True)
-            total_frames = video_tensor.size(0)
-            
-            # 智能帧采样策略
-            if total_frames <= self.max_frames:
-                frame_indices = torch.arange(0, total_frames, device=device)
-            else:
-                # 均匀采样
-                step = total_frames / self.max_frames
-                frame_indices = torch.arange(0, total_frames, step, device=device).long()[:self.max_frames]
-            
-            # 批量提取帧
-            selected_frames = video_tensor[frame_indices]  # (max_frames, H, W, C)
-            
-            # GPU上进行质量检测（使用Sobel算子代替Laplacian）
-            if self.quality_threshold > 0:
-                # 转换为灰度图进行质量检测（先转换为float类型）
-                gray_frames = selected_frames.float().mean(dim=-1, keepdim=True)  # (T, H, W, 1)
-                gray_frames = gray_frames.permute(0, 3, 1, 2)  # (T, 1, H, W)
-                
-                # 使用Sobel算子计算图像质量
-                sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], 
-                                     dtype=torch.float32, device=device).view(1, 1, 3, 3)
-                sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], 
-                                     dtype=torch.float32, device=device).view(1, 1, 3, 3)
-                
-                grad_x = F.conv2d(gray_frames, sobel_x, padding=1)
-                grad_y = F.conv2d(gray_frames, sobel_y, padding=1)
-                quality_scores = (grad_x.pow(2) + grad_y.pow(2)).mean(dim=[1, 2, 3])
-                
-                # 过滤低质量帧
-                quality_mask = quality_scores > self.quality_threshold
-                if quality_mask.sum() > 0:
-                    selected_frames = selected_frames[quality_mask]
-                
-            # GPU上进行尺寸调整
-            selected_frames = selected_frames.permute(0, 3, 1, 2).float()  # (T, C, H, W)
-            if selected_frames.size(-1) != self.target_size[0] or selected_frames.size(-2) != self.target_size[1]:
-                selected_frames = F.interpolate(selected_frames, size=self.target_size, 
-                                              mode='bilinear', align_corners=False)
-            
-            # 确保帧数足够
-            current_frames = selected_frames.size(0)
-            if current_frames < self.max_frames:
-                # 重复最后一帧
-                if current_frames > 0:
-                    last_frame = selected_frames[-1:].repeat(self.max_frames - current_frames, 1, 1, 1)
-                    selected_frames = torch.cat([selected_frames, last_frame], dim=0)
-                else:
-                    # 创建黑色帧
-                    selected_frames = torch.zeros(self.max_frames, 3, self.target_size[0], self.target_size[1], 
-                                                device=device, dtype=torch.float32)
-            
-            # 限制到最大帧数
-            selected_frames = selected_frames[:self.max_frames]
-            
-            # 转换回CPU numpy格式（为了兼容现有代码）
-            frames_cpu = selected_frames.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
-            frames_list = [frame for frame in frames_cpu]
-            
-            return frames_list
-            
-        except Exception as e:
-            print(f"GPU帧提取失败，回退到CPU: {e}")
-            return self.extract_frames_cpu_fallback(video_path)
-    
-    def extract_frames_cpu_fallback(self, video_path):
-        """CPU回退的帧提取函数"""
-        cap = cv2.VideoCapture(video_path)
-        frames = []
-
-        if not cap.isOpened():
-            print(f"无法打开视频: {video_path}")
-            return frames
-
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if total_frames == 0:
-            cap.release()
-            return frames
-
-        # 均匀采样策略
-        if total_frames <= self.max_frames:
-            frame_indices = list(range(0, total_frames, max(1, total_frames // self.max_frames)))
-        else:
-            step = max(1, total_frames // self.max_frames)
-            frame_indices = list(range(0, total_frames, step))[:self.max_frames]
-
-        frame_count = 0
-        for frame_idx in frame_indices:
-            if frame_count >= self.max_frames:
-                break
-
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cap.read()
-
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
-                # 质量检测
-                if self.quality_threshold > 0:
-                    gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-                    quality = cv2.Laplacian(gray, cv2.CV_64F).var()
-                    if quality <= self.quality_threshold:
-                        continue
-                
-                frame = cv2.resize(frame, self.target_size)
-                frames.append(frame)
-                frame_count += 1
-
-        cap.release()
-
-        # 如果帧数不足，重复最后一帧
-        while len(frames) < self.max_frames and len(frames) > 0:
-            frames.append(frames[-1].copy())
-
-        return frames[:self.max_frames]
+        # 获取优化的视频处理器
+        self.video_processor = get_video_processor(
+            max_frames=max_frames,
+            target_size=target_size,
+            quality_threshold=quality_threshold
+        )
     
     def process_videos(self, base_data_dir, max_videos_per_class=250):
         """处理视频数据 - RTX4070优化版本"""
@@ -193,7 +48,7 @@ class VideoProcessor:
             for video_file in tqdm(video_files, desc="处理真实视频"):
                 try:
                     video_path = os.path.join(original_dir, video_file)
-                    frames = self.extract_frames_gpu_accelerated(video_path)
+                    frames = self.video_processor.extract_frames_gpu_accelerated(video_path)
                     
                     if len(frames) >= self.max_frames // 2:  # 至少要有一半的帧
                         data_list.append({
@@ -222,7 +77,7 @@ class VideoProcessor:
                 for video_file in tqdm(video_files, desc=f"处理{method}"):
                     try:
                         video_path = os.path.join(method_dir, video_file)
-                        frames = self.extract_frames_gpu_accelerated(video_path)
+                        frames = self.video_processor.extract_frames_gpu_accelerated(video_path)
                         
                         if len(frames) >= self.max_frames // 2:
                             data_list.append({
@@ -318,7 +173,7 @@ def prepare_data(data_dir=None, max_videos_per_class=None, force_reprocess=False
     config.DATA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     
     # 处理视频数据
-    processor = VideoProcessor(
+    processor = DatasetManager(
         max_frames=config.MAX_FRAMES,
         target_size=config.FRAME_SIZE
     )

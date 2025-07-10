@@ -121,14 +121,18 @@ def main():
     config.print_config()
     print("="*60)
     
-    # 显示内存状态和优化建议
-    print("\n📊 训练前内存状态:")
-    print_memory_info()
-    suggestions = get_memory_suggestions()
-    if len(suggestions) > 1 or "内存使用状况良好" not in suggestions[0]:
-        print("\n💡 内存优化建议:")
-        for suggestion in suggestions:
-            print(f"   {suggestion}")
+    # 从配置文件读取内存管理参数
+    memory_config = getattr(config, 'MEMORY_MANAGER', {})
+    
+    # 显示内存状态和优化建议（仅在详细模式下）
+    if memory_config.get('verbose_output', False):
+        print("\n📊 训练前内存状态:")
+        print_memory_info()
+        suggestions = get_memory_suggestions()
+        if len(suggestions) > 1 or "内存使用状况良好" not in suggestions[0]:
+            print("\n💡 内存优化建议:")
+            for suggestion in suggestions:
+                print(f"   {suggestion}")
     
     # 数据准备
     print("\n📊 准备数据...")
@@ -214,6 +218,14 @@ def main():
     # 开始训练（使用内存管理）
     print("\n🎯 开始训练（带智能内存管理）...")
     try:
+        # 创建内存管理器实例
+        memory_manager = MemoryManager(
+            gpu_memory_threshold=memory_config.get('gpu_threshold', 0.75),
+            cpu_memory_threshold=memory_config.get('cpu_threshold', 0.85),
+            auto_cleanup_interval=memory_config.get('cleanup_interval', 60.0),
+            verbose_output=memory_config.get('verbose_output', False)
+        )
+        
         # 使用带内存管理的训练方法
         history = trainer.start_training_with_memory_management(
             num_epochs=config.NUM_EPOCHS - start_epoch,
@@ -237,9 +249,10 @@ def main():
         }, final_model_path)
         print(f"🎯 最终模型已保存到: {final_model_path}")
         
-        # 显示训练后的内存状态
-        print("\n📊 训练后内存状态:")
-        print_memory_info()
+        # 显示训练后的内存状态（仅在详细模式下）
+        if memory_config.get('verbose_output', False):
+            print("\n📊 训练后内存状态:")
+            print_memory_info()
         
         print("\n✅ 训练完成!")
         

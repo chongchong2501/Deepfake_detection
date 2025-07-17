@@ -3,7 +3,8 @@
 # 如果需要处理数据（首次运行）
 if not os.path.exists('./data/train.csv'):
     print("📁 开始数据处理...")
-    data_list = process_videos_simple(BASE_DATA_DIR, max_real=250, max_fake=250, max_frames=16)
+    # 使用更大的数据量：1000个真实视频 + 2000个伪造视频（每种类型400个）
+    data_list = process_videos_simple(BASE_DATA_DIR, max_real=1000, max_fake=2000, max_frames=16)
     
     if len(data_list) == 0:
         print("❌ 未找到数据，请检查数据路径")

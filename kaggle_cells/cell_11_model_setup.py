@@ -4,9 +4,9 @@ import torch.nn as nn
 
 print("🤖 创建和配置模型...")
 
-# 创建模型 - 针对Kaggle T4 GPU优化
+# 创建模型 - 使用更强的EfficientNet backbone
 model = OptimizedDeepfakeDetector(
-    backbone='resnet50',
+    backbone='efficientnet_b0',  # 使用EfficientNet
     hidden_dim=512,
     num_layers=2,
     dropout=0.3,
@@ -30,14 +30,12 @@ print(f"模型总参数数量: {total_params:,}")
 print(f"可训练参数数量: {trainable_params:,}")
 print(f"模型大小估计: {total_params * 4 / 1024**2:.1f} MB")
 
-# 损失函数 - 针对严重类别不平衡优化
-# 计算类别权重（假设真实视频是少数类）
-pos_weight = torch.tensor([3.0]).to(device)  # 给真实视频更高权重
-criterion = FocalLoss(alpha=0.75, gamma=3.0, pos_weight=pos_weight)  # 增强对困难样本的关注
-print(f"损失函数: FocalLoss (alpha=0.75, gamma=3.0, pos_weight=3.0)")
+# 损失函数 - 使用平衡的配置，移除pos_weight偏向
+criterion = FocalLoss(alpha=0.25, gamma=2.0, pos_weight=None)  # 更平衡的参数
+print(f"损失函数: FocalLoss (alpha=0.25, gamma=2.0, 无pos_weight偏向)")
 
-# 优化器
-base_lr = 0.001
+# 优化器 - 降低学习率
+base_lr = 0.0001  # 降低学习率
 optimizer = optim.AdamW(
     model.parameters(), 
     lr=base_lr,
@@ -45,26 +43,26 @@ optimizer = optim.AdamW(
 )
 print(f"优化器: AdamW (lr={base_lr})")
 
-# 学习率调度器
+# 学习率调度器 - 增加训练轮数
 scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optimizer,
-    max_lr=base_lr * 5,
-    epochs=20,
+    max_lr=base_lr * 10,  # 调整最大学习率
+    epochs=50,  # 增加训练轮数
     steps_per_epoch=len(train_loader),
     pct_start=0.3,
     anneal_strategy='cos'
 )
-print(f"学习率调度器: OneCycleLR")
+print(f"学习率调度器: OneCycleLR (50 epochs)")
 
-# 早停机制
-early_stopping = EarlyStopping(patience=7, min_delta=0.001)
-print(f"早停机制: patience=7, min_delta=0.001")
+# 早停机制 - 增加patience
+early_stopping = EarlyStopping(patience=15, min_delta=0.001)  # 增加patience
+print(f"早停机制: patience=15, min_delta=0.001")
 
 # 训练配置 - 统一使用FP32数据类型
 scaler = None
 print("数据类型: FP32 (确保兼容性)")
 
-num_epochs = 20
+num_epochs = 50  # 增加训练轮数
 print(f"训练轮数: {num_epochs}")
 
 # 测试模型前向传播

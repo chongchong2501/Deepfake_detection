@@ -18,6 +18,18 @@ class OptimizedDeepfakeDetector(nn.Module):
             self.backbone = models.resnet18(pretrained=True)
             feature_dim = self.backbone.fc.in_features
             self.backbone.fc = nn.Identity()
+        elif backbone == 'efficientnet_b0':
+            self.backbone = models.efficientnet_b0(pretrained=True)
+            feature_dim = self.backbone.classifier.in_features
+            self.backbone.classifier = nn.Identity()
+        elif backbone == 'efficientnet_b1':
+            self.backbone = models.efficientnet_b1(pretrained=True)
+            feature_dim = self.backbone.classifier.in_features
+            self.backbone.classifier = nn.Identity()
+        elif backbone == 'efficientnet_b2':
+            self.backbone = models.efficientnet_b2(pretrained=True)
+            feature_dim = self.backbone.classifier.in_features
+            self.backbone.classifier = nn.Identity()
         else:
             raise ValueError(f"不支持的backbone: {backbone}")
         

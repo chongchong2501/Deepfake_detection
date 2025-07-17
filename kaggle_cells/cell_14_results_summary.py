@@ -11,7 +11,7 @@ results_summary = {
     'experiment_info': {
         'timestamp': datetime.now().isoformat(),
         'model_architecture': 'OptimizedDeepfakeDetector',
-        'backbone': 'efficientnet_b0',  # 更新为EfficientNet
+        'backbone': 'resnet50',
         'total_epochs': len(train_history['train_loss']),
         'early_stopping': True
     },
@@ -23,16 +23,13 @@ results_summary = {
     },
     'training_config': {
         'optimizer': 'AdamW',
-        'learning_rate': 0.0001,
+        'learning_rate': 1e-4,
         'weight_decay': 1e-4,
         'loss_function': 'FocalLoss',
         'scheduler': 'OneCycleLR',
-        'early_stopping_patience': 15,
-        'data_augmentation': True,
-        'max_real_videos': 1000,
-        'max_fake_videos': 2000
-     },
-     'final_metrics': {
+        'early_stopping_patience': 7
+    },
+    'final_metrics': {
         'test_loss': float(eval_results['loss']),
         'accuracy': float(metrics['accuracy']),
         'precision': float(metrics['precision']),

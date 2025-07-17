@@ -150,8 +150,14 @@ def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(224,
     """兼容性包装函数，优先使用GPU加速"""
     return extract_frames_gpu_accelerated(video_path, max_frames, target_size, quality_threshold)
 
-def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16):
+def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16, max_real=None, max_fake=None):
     """简化的视频处理函数"""
+    # 向后兼容：如果指定了新参数，使用新参数；否则使用旧参数
+    if max_real is None:
+        max_real = max_videos_per_class
+    if max_fake is None:
+        max_fake = max_videos_per_class
+    
     data_list = []
     fake_methods = ['Deepfakes', 'Face2Face', 'FaceShifter', 'FaceSwap', 'NeuralTextures']
 
@@ -162,8 +168,8 @@ def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16)
         video_files = [f for f in os.listdir(original_dir)
                       if f.endswith(('.mp4', '.avi', '.mov'))]
         
-        if len(video_files) > max_videos_per_class:
-            video_files = random.sample(video_files, max_videos_per_class)
+        if len(video_files) > max_real:
+            video_files = random.sample(video_files, max_real)
 
         print(f"找到 {len(video_files)} 个真实视频")
 
@@ -183,34 +189,36 @@ def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16)
                 print(f"处理视频 {video_file} 时出错: {e}")
                 continue
 
-    # 处理伪造视频
+    # 处理伪造视频 - 支持总数限制
     print("开始处理伪造视频...")
+    all_fake_videos = []
     for method in fake_methods:
         method_dir = os.path.join(base_data_dir, method)
         if os.path.exists(method_dir):
-            video_files = [f for f in os.listdir(method_dir)
-                          if f.endswith(('.mp4', '.avi', '.mov'))]
+            method_videos = [os.path.join(method_dir, f) for f in os.listdir(method_dir) 
+                           if f.endswith(('.mp4', '.avi', '.mov'))]
+            all_fake_videos.extend([(v, method) for v in method_videos])
+    
+    # 如果指定了总伪造视频数量，从所有方法中采样
+    if len(all_fake_videos) > max_fake:
+        all_fake_videos = random.sample(all_fake_videos, max_fake)
+    
+    print(f"总共采样 {len(all_fake_videos)} 个伪造视频")
+    
+    for video_path, method in tqdm(all_fake_videos, desc="处理伪造视频"):
+        try:
+            frames = extract_frames_memory_efficient(video_path, max_frames)
             
-            if len(video_files) > max_videos_per_class:
-                video_files = random.sample(video_files, max_videos_per_class)
-
-            print(f"处理 {method}: {len(video_files)} 个视频")
-
-            for video_file in tqdm(video_files, desc=f"处理{method}"):
-                try:
-                    video_path = os.path.join(method_dir, video_file)
-                    frames = extract_frames_memory_efficient(video_path, max_frames)
-                    
-                    if len(frames) >= max_frames // 2:
-                        data_list.append({
-                            'video_path': video_path,
-                            'frames': frames,
-                            'label': 1,  # 伪造视频
-                            'method': method
-                        })
-                except Exception as e:
-                    print(f"处理视频 {video_file} 时出错: {e}")
-                    continue
+            if len(frames) >= max_frames // 2:
+                data_list.append({
+                    'video_path': video_path,
+                    'frames': frames,
+                    'label': 1,  # 伪造视频
+                    'method': method
+                })
+        except Exception as e:
+            print(f"处理视频 {os.path.basename(video_path)} 时出错: {e}")
+            continue
 
     print(f"\n✅ 数据处理完成，共处理 {len(data_list)} 个视频")
     return data_list

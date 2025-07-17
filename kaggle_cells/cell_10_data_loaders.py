@@ -45,22 +45,9 @@ test_dataset = DeepfakeVideoDataset(
 )
 print("✅ 数据集创建完成，已优化Kaggle T4环境配置")
 
-# Kaggle T4 GPU批次大小优化
-if torch.cuda.is_available():
-    gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    print(f"GPU内存: {gpu_memory:.1f} GB")
-    
-    # 保守的批次大小设置 - 确保稳定性和兼容性
-    if gpu_memory >= 15:  # T4 GPU
-        batch_size = 8  # 保守设置，确保稳定
-    elif gpu_memory >= 8:
-        batch_size = 6
-    else:
-        batch_size = 4
-else:
-    batch_size = 4
-
-print(f"使用批次大小: {batch_size} (Kaggle T4优化，稳定性优先)")
+# 删除动态 batch_size 设置
+batch_size = 2
+print(f"使用批次大小: {batch_size} (用户指定)")
 
 # Kaggle环境多进程配置 - 简化版本
 if IS_KAGGLE:

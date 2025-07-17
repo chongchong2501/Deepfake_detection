@@ -1,15 +1,21 @@
 # Cell 11: 模型初始化和训练配置 - Kaggle T4 GPU优化版本
 
+import torch.nn as nn
+
 print("🤖 创建和配置模型...")
 
 # 创建模型 - 针对Kaggle T4 GPU优化
 model = OptimizedDeepfakeDetector(
     backbone='resnet50',
-    hidden_dim=512,      # 适中的隐藏层维度
-    num_layers=2,        # 减少LSTM层数
-    dropout=0.3,         # 适中的dropout
+    hidden_dim=512,
+    num_layers=2,
+    dropout=0.3,
     use_attention=True
-).to(device)
+)
+if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+    print(f"使用多GPU训练: {torch.cuda.device_count()} GPUs")
+    model = nn.DataParallel(model)
+model = model.to(device)
 
 # 单GPU配置
 if torch.cuda.is_available():

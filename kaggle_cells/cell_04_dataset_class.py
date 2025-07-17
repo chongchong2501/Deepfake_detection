@@ -1,5 +1,8 @@
 # Cell 4: 数据集类定义
 
+import os
+import numpy as np
+
 class DeepfakeVideoDataset(Dataset):
     """深度伪造视频数据集类 - Kaggle T4 优化版本"""
     
@@ -31,6 +34,8 @@ class DeepfakeVideoDataset(Dataset):
             
         print(f"🚀 数据集初始化: GPU预处理={'启用' if self.gpu_preprocessing else '禁用'}, "
               f"缓存={'启用' if self.cache_frames else '禁用'}, 数据类型=FP32")
+        self.frame_dir = './frames'
+        os.makedirs(self.frame_dir, exist_ok=True)
     
     def __len__(self):
         if self.df is not None:
@@ -39,30 +44,36 @@ class DeepfakeVideoDataset(Dataset):
     
     def __getitem__(self, idx):
         if self.data_list is not None:
-            # 直接从内存中的数据列表获取
             item = self.data_list[idx]
+            video_path = item['video_path']
             frames = item['frames']
             label = item['label']
-            video_path = None
         else:
-            # 从CSV文件获取路径
             row = self.df.iloc[idx]
             video_path = row['video_path']
             label = row['label']
             frames = None
         
         # 简化的数据处理流程
-        if frames is None:
-            # 检查CPU缓存
-            if self.cache_frames and video_path in self.frame_cache:
-                frames = self.frame_cache[video_path]
-                self.cache_hits += 1
-            else:
-                frames = extract_frames_gpu_accelerated(video_path, self.max_frames, target_size=(224, 224))
-                self.cache_misses += 1
-                # 缓存帧数据
-                if self.cache_frames and len(frames) > 0:
-                    self.frame_cache[video_path] = frames
+        npy_path = os.path.join(self.frame_dir, os.path.basename(video_path) + '.npy')
+        if os.path.exists(npy_path):
+            loaded_frames = np.load(npy_path)
+            frames = [loaded_frames[i] for i in range(loaded_frames.shape[0])]
+        else:
+            if frames is None:
+                # 检查CPU缓存
+                if self.cache_frames and video_path in self.frame_cache:
+                    frames = self.frame_cache[video_path]
+                    self.cache_hits += 1
+                else:
+                    frames = extract_frames_gpu_accelerated(video_path, self.max_frames, target_size=(224, 224))
+                    self.cache_misses += 1
+                    # 缓存帧数据
+                    if self.cache_frames and len(frames) > 0:
+                        self.frame_cache[video_path] = frames
+            # 保存预处理帧
+            if len(frames) > 0:
+                np.save(npy_path, np.stack(frames))
         
         # 确保有足够的帧
         if len(frames) == 0:

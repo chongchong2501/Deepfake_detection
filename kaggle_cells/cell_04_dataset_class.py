@@ -22,26 +22,39 @@ class DeepfakeVideoDataset(Dataset):
         self.gpu_preprocessing = gpu_preprocessing and torch.cuda.is_available()
         self.cache_frames = cache_frames
         
-        # 简化缓存系统 - 仅CPU缓存，避免GPU内存压力
-        self.frame_cache = {} if cache_frames else None
-        self.cache_hits = 0
-        self.cache_misses = 0
+        # 优化缓存系统 - 使用LRU缓存
+        if cache_frames:
+            from functools import lru_cache
+            self.frame_cache = {}
+            self.cache_hits = 0
+            self.cache_misses = 0
+            self.max_cache_size = 100  # 限制缓存大小
+        else:
+            self.frame_cache = None
         
-        # GPU预处理的标准化参数 - 统一使用FP32
+        # 预计算数据统计信息
+        self._compute_dataset_stats()
+        
+        print(f"✅ 数据集初始化完成: {len(self)} 个样本")
         if self.gpu_preprocessing:
-            self.mean = torch.tensor([0.485, 0.456, 0.406], device='cuda', dtype=torch.float32)
-            self.std = torch.tensor([0.229, 0.224, 0.225], device='cuda', dtype=torch.float32)
-            
-        print(f"🚀 数据集初始化: GPU预处理={'启用' if self.gpu_preprocessing else '禁用'}, "
-              f"缓存={'启用' if self.cache_frames else '禁用'}, 数据类型=FP32")
-        self.frame_dir = './frames'
-        os.makedirs(self.frame_dir, exist_ok=True)
-    
+            print("🚀 启用GPU预处理")
+
+    def _compute_dataset_stats(self):
+        """预计算数据集统计信息"""
+        if self.df is not None:
+            self.real_count = len(self.df[self.df['label'] == 0])
+            self.fake_count = len(self.df[self.df['label'] == 1])
+        elif self.data_list is not None:
+            self.real_count = sum(1 for item in self.data_list if item['label'] == 0)
+            self.fake_count = sum(1 for item in self.data_list if item['label'] == 1)
+        
+        print(f"📊 数据分布: 真实={self.real_count}, 伪造={self.fake_count}")
+
     def __len__(self):
         if self.df is not None:
             return len(self.df)
         return len(self.data_list)
-    
+
     def __getitem__(self, idx):
         if self.data_list is not None:
             item = self.data_list[idx]
@@ -53,72 +66,111 @@ class DeepfakeVideoDataset(Dataset):
             video_path = row['video_path']
             label = row['label']
             frames = None
-        
-        # 简化的数据处理流程
-        npy_path = os.path.join(self.frame_dir, os.path.basename(video_path) + '.npy')
-        if os.path.exists(npy_path):
-            loaded_frames = np.load(npy_path)
-            frames = [loaded_frames[i] for i in range(loaded_frames.shape[0])]
+
+        # 缓存检查
+        cache_key = f"{video_path}_{self.max_frames}"
+        if self.frame_cache is not None and cache_key in self.frame_cache:
+            frames = self.frame_cache[cache_key]
+            self.cache_hits += 1
         else:
             if frames is None:
-                # 检查CPU缓存
-                if self.cache_frames and video_path in self.frame_cache:
-                    frames = self.frame_cache[video_path]
-                    self.cache_hits += 1
-                else:
-                    frames = extract_frames_gpu_accelerated(video_path, self.max_frames, target_size=(224, 224))
-                    self.cache_misses += 1
-                    # 缓存帧数据
-                    if self.cache_frames and len(frames) > 0:
-                        self.frame_cache[video_path] = frames
-            # 保存预处理帧
-            if len(frames) > 0:
-                np.save(npy_path, np.stack(frames))
-        
-        # 确保有足够的帧
+                frames = extract_frames_memory_efficient(
+                    video_path, 
+                    max_frames=self.max_frames,
+                    target_size=(224, 224)
+                )
+            
+            # 添加到缓存
+            if self.frame_cache is not None and len(self.frame_cache) < self.max_cache_size:
+                self.frame_cache[cache_key] = frames
+                self.cache_misses += 1
+
         if len(frames) == 0:
+            # 创建黑色帧作为fallback
             frames = [np.zeros((224, 224, 3), dtype=np.uint8) for _ in range(self.max_frames)]
-        
+
+        # 确保帧数一致
         while len(frames) < self.max_frames:
-            frames.append(frames[-1].copy() if frames else np.zeros((224, 224, 3), dtype=np.uint8))
-        
+            frames.append(frames[-1] if frames else np.zeros((224, 224, 3), dtype=np.uint8))
         frames = frames[:self.max_frames]
-        
-        # 统一的数据预处理 - 全部使用FP32
-        if self.transform:
-            frames = [self.transform(frame) for frame in frames]
-            video_tensor = torch.stack(frames)
-        elif self.gpu_preprocessing:
-            # GPU预处理：减少CPU-GPU传输次数
-            frames_array = np.stack(frames)  # (T, H, W, C)
-            video_tensor = torch.from_numpy(frames_array).permute(0, 3, 1, 2).float()  # (T, C, H, W)
-            
-            # 移动到GPU并进行预处理 - 统一使用FP32
-            video_tensor = video_tensor.to('cuda', non_blocking=True, dtype=torch.float32) / 255.0
-            
-            # 标准化
-            video_tensor = (video_tensor - self.mean.view(1, 3, 1, 1)) / self.std.view(1, 3, 1, 1)
-        else:
-            # CPU预处理
-            frames = [torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0 for frame in frames]
-            video_tensor = torch.stack(frames)
-        
-        # 标签处理 - 统一使用FP32
-        label_tensor = torch.tensor(label, dtype=torch.float32)
+
+        # GPU预处理
         if self.gpu_preprocessing:
-            label_tensor = label_tensor.to('cuda', non_blocking=True)
-        
+            try:
+                # 转换为tensor并移动到GPU
+                video_tensor = torch.stack([
+                    torch.from_numpy(frame).permute(2, 0, 1) for frame in frames
+                ])  # (T, C, H, W)
+                
+                # 移动到GPU并归一化
+                video_tensor = video_tensor.to('cuda', non_blocking=True, dtype=torch.float32) / 255.0
+                
+                # GPU上进行数据增强
+                if self.transform is None and hasattr(self, '_is_training') and self._is_training:
+                    video_tensor = self._gpu_augmentation(video_tensor)
+                
+                # 标准化
+                mean = torch.tensor([0.485, 0.456, 0.406], device='cuda').view(1, 3, 1, 1)
+                std = torch.tensor([0.229, 0.224, 0.225], device='cuda').view(1, 3, 1, 1)
+                video_tensor = (video_tensor - mean) / std
+                
+                # 创建标签tensor
+                label_tensor = torch.tensor(label, dtype=torch.float32)
+                label_tensor = label_tensor.to('cuda', non_blocking=True)
+                
+                return video_tensor, label_tensor
+                
+            except Exception as e:
+                print(f"GPU预处理失败，回退到CPU: {e}")
+                # 回退到CPU处理
+                pass
+
+        # CPU处理路径
+        video_tensor = torch.stack([
+            torch.from_numpy(frame).permute(2, 0, 1) for frame in frames
+        ]).float() / 255.0  # (T, C, H, W)
+
+        # 应用变换
+        if self.transform:
+            transformed_frames = []
+            for frame in video_tensor:
+                frame_pil = transforms.ToPILImage()(frame)
+                transformed_frame = self.transform(frame_pil)
+                transformed_frames.append(transformed_frame)
+            video_tensor = torch.stack(transformed_frames)
+        else:
+            # 默认标准化
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+            video_tensor = (video_tensor - mean) / std
+
+        label_tensor = torch.tensor(label, dtype=torch.float32)
         return video_tensor, label_tensor
-    
+
+    def _gpu_augmentation(self, video_tensor):
+        """GPU上的简单数据增强"""
+        # 随机水平翻转
+        if torch.rand(1) > 0.5:
+            video_tensor = torch.flip(video_tensor, dims=[3])
+        
+        # 随机亮度调整
+        if torch.rand(1) > 0.5:
+            brightness_factor = 0.8 + 0.4 * torch.rand(1).item()
+            video_tensor = torch.clamp(video_tensor * brightness_factor, 0, 1)
+        
+        return video_tensor
+
     def get_cache_stats(self):
         """获取缓存统计信息"""
-        total_requests = self.cache_hits + self.cache_misses
-        hit_rate = self.cache_hits / total_requests if total_requests > 0 else 0
-        return {
-            'cache_hits': self.cache_hits,
-            'cache_misses': self.cache_misses,
-            'hit_rate': hit_rate,
-            'cpu_cache_size': len(self.frame_cache) if self.frame_cache else 0
-        }
+        if self.frame_cache is not None:
+            total_requests = self.cache_hits + self.cache_misses
+            hit_rate = self.cache_hits / total_requests if total_requests > 0 else 0
+            return {
+                'cache_hits': self.cache_hits,
+                'cache_misses': self.cache_misses,
+                'hit_rate': hit_rate,
+                'cache_size': len(self.frame_cache)
+            }
+        return None
 
 print("✅ 数据集类定义完成")

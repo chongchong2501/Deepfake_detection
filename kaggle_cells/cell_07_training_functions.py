@@ -19,14 +19,27 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scaler=None):
         # 梯度清零
         optimizer.zero_grad(set_to_none=True)
 
-        # 前向传播（统一使用FP32）
-        output, _ = model(data)
-        loss = criterion(output, target)
-        
-        # 反向传播
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+        # 前向传播 - 支持混合精度
+        if scaler is not None:
+            with autocast():
+                output, _ = model(data)
+                loss = criterion(output, target)
+            
+            # 反向传播
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            # FP32训练
+            output, _ = model(data)
+            loss = criterion(output, target)
+            
+            # 反向传播
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
 
         total_loss += loss.item()
         
@@ -47,7 +60,7 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scaler=None):
         })
         
         # 定期清理GPU缓存
-        if batch_idx % 50 == 0 and torch.cuda.is_available():
+        if batch_idx % 20 == 0 and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
     avg_loss = total_loss / len(train_loader)
@@ -97,9 +110,14 @@ def validate_epoch(model, val_loader, criterion, device, scaler=None):
             data = data.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             
-            # 前向传播（统一使用FP32）
-            output, _ = model(data)
-            loss = criterion(output, target)
+            # 前向传播 - 支持混合精度
+            if scaler is not None:
+                with autocast():
+                    output, _ = model(data)
+                    loss = criterion(output, target)
+            else:
+                output, _ = model(data)
+                loss = criterion(output, target)
 
             total_loss += loss.item()
             
@@ -119,7 +137,7 @@ def validate_epoch(model, val_loader, criterion, device, scaler=None):
             })
             
             # 定期清理GPU缓存
-            if batch_idx % 50 == 0 and torch.cuda.is_available():
+            if batch_idx % 20 == 0 and torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
     avg_loss = total_loss / len(val_loader)

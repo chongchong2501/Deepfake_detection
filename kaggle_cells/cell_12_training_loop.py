@@ -1,6 +1,10 @@
 # Cell 12: 训练循环 - Kaggle T4 GPU优化版本
 
 # 确保模型保存目录存在
+import os
+import torch
+from datetime import datetime
+
 os.makedirs('./models', exist_ok=True)
 
 print("🚀 开始训练...")

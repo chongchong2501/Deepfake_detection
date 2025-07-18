@@ -1,5 +1,10 @@
 # Cell 14: 结果保存和总结
 
+import os
+import torch
+import pandas as pd
+from datetime import datetime
+
 print("💾 保存实验结果...")
 print("=" * 60)
 

@@ -1,6 +1,10 @@
 # Cell 11: 模型初始化和训练配置 - Kaggle T4 GPU优化版本
 
+import torch
 import torch.nn as nn
+import torch.optim as optim
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from torch.cuda.amp import GradScaler
 
 print("🤖 创建和配置模型...")
 
@@ -23,9 +27,29 @@ if torch.cuda.is_available():
     print(f"💾 GPU内存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f}GB")
 
 # 损失函数 - 使用类别权重平衡
-# 计算类别权重
-real_count = len([item for item in train_dataset.data_list if item['label'] == 0]) if hasattr(train_dataset, 'data_list') else 1
-fake_count = len([item for item in train_dataset.data_list if item['label'] == 1]) if hasattr(train_dataset, 'data_list') else 1
+# 计算类别权重 - 修复版本
+if hasattr(train_dataset, 'real_count') and hasattr(train_dataset, 'fake_count'):
+    # 使用预计算的统计信息
+    real_count = train_dataset.real_count
+    fake_count = train_dataset.fake_count
+else:
+    # 回退方案：手动计算
+    if hasattr(train_dataset, 'data_list') and train_dataset.data_list is not None:
+        real_count = sum(1 for item in train_dataset.data_list if item['label'] == 0)
+        fake_count = sum(1 for item in train_dataset.data_list if item['label'] == 1)
+    elif hasattr(train_dataset, 'df') and train_dataset.df is not None:
+        real_count = len(train_dataset.df[train_dataset.df['label'] == 0])
+        fake_count = len(train_dataset.df[train_dataset.df['label'] == 1])
+    else:
+        # 默认值
+        real_count = 1
+        fake_count = 1
+        print("⚠️ 无法获取类别分布，使用默认权重")
+
+# 确保计数不为零
+real_count = max(real_count, 1)
+fake_count = max(fake_count, 1)
+
 pos_weight = torch.tensor([real_count / fake_count], device=device)
 
 print(f"📊 类别分布 - 真实: {real_count}, 伪造: {fake_count}")

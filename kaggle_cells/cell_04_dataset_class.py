@@ -8,10 +8,11 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 class DeepfakeVideoDataset(Dataset):
-    """深度伪造视频数据集类 - Kaggle T4 优化版本"""
+    """深度伪造视频数据集类 - 集成MTCNN和多模态特征"""
     
     def __init__(self, csv_file=None, data_list=None, transform=None, max_frames=16, 
-                 gpu_preprocessing=False, cache_frames=False):
+                 gpu_preprocessing=False, cache_frames=False, use_mtcnn=True, 
+                 extract_fourier=False, extract_compression=False):
         if csv_file is not None:
             try:
                 self.df = pd.read_csv(csv_file)
@@ -31,6 +32,9 @@ class DeepfakeVideoDataset(Dataset):
         self.max_frames = max_frames
         self.gpu_preprocessing = gpu_preprocessing and torch.cuda.is_available()
         self.cache_frames = cache_frames
+        self.use_mtcnn = use_mtcnn and globals().get('MTCNN_AVAILABLE', False)
+        self.extract_fourier = extract_fourier and globals().get('SCIPY_AVAILABLE', False)
+        self.extract_compression = extract_compression
         
         # 优化缓存系统 - 使用LRU缓存
         if cache_frames:
@@ -48,6 +52,12 @@ class DeepfakeVideoDataset(Dataset):
         print(f"✅ 数据集初始化完成: {len(self)} 个样本")
         if self.gpu_preprocessing:
             print("🚀 启用GPU预处理")
+        if self.use_mtcnn:
+            print("👁️ 启用MTCNN人脸检测")
+        if self.extract_fourier:
+            print("📊 启用频域特征提取")
+        if self.extract_compression:
+            print("🔍 启用压缩伪影分析")
 
     def _compute_dataset_stats(self):
         """预计算数据集统计信息"""
@@ -86,13 +96,30 @@ class DeepfakeVideoDataset(Dataset):
                 label = row['label']
                 frames = None
 
-            # 创建默认帧（避免视频文件读取问题）
-            frames = self._create_default_frames()
+            # 如果没有预提取的帧，则实时提取
+            if frames is None:
+                try:
+                    from .cell_03_data_processing import extract_frames_memory_efficient
+                    frames = extract_frames_memory_efficient(
+                        video_path, 
+                        max_frames=self.max_frames,
+                        use_mtcnn=self.use_mtcnn
+                    )
+                except Exception as e:
+                    print(f"⚠️ 实时帧提取失败: {e}")
+                    frames = self._create_default_frames()
+            
+            # 如果仍然没有帧，创建默认帧
+            if not frames:
+                frames = self._create_default_frames()
             
             # 确保帧数一致
             while len(frames) < self.max_frames:
                 frames.append(frames[-1] if frames else np.zeros((224, 224, 3), dtype=np.uint8))
             frames = frames[:self.max_frames]
+
+            # 提取多模态特征
+            additional_features = self._extract_additional_features(frames)
 
             # 始终使用CPU处理路径确保稳定性
             video_tensor = torch.stack([
@@ -120,12 +147,82 @@ class DeepfakeVideoDataset(Dataset):
                 print(f"⚠️ 标准化失败: {e}")
 
             label_tensor = torch.tensor(label, dtype=torch.float32)
-            return video_tensor, label_tensor
+            
+            # 返回数据和额外特征
+            if additional_features:
+                return video_tensor, label_tensor, additional_features
+            else:
+                return video_tensor, label_tensor
             
         except Exception as e:
             print(f"⚠️ 获取数据项 {idx} 时出错: {e}")
             # 返回默认数据
             return self._get_default_item()
+
+    def _extract_additional_features(self, frames):
+        """提取额外的多模态特征"""
+        features = {}
+        
+        try:
+            if self.extract_fourier:
+                # 提取频域特征（使用中间帧）
+                mid_frame = frames[len(frames) // 2]
+                from .cell_03_data_processing import extract_fourier_features
+                fourier_features = extract_fourier_features(mid_frame)
+                if fourier_features:
+                    features['fourier'] = fourier_features
+            
+            if self.extract_compression:
+                # 提取压缩伪影特征
+                compression_features = []
+                for frame in frames[::4]:  # 每4帧采样一次
+                    from .cell_03_data_processing import analyze_compression_artifacts
+                    comp_feat = analyze_compression_artifacts(frame)
+                    if comp_feat:
+                        compression_features.append(comp_feat)
+                
+                if compression_features:
+                    # 聚合压缩特征
+                    features['compression'] = {
+                        'mean_dct_energy': np.mean([f['dct_energy'] for f in compression_features]),
+                        'mean_edge_density': np.mean([f['edge_density'] for f in compression_features]),
+                        'std_dct_energy': np.std([f['dct_energy'] for f in compression_features])
+                    }
+            
+            # 计算时序一致性特征
+            if len(frames) > 1:
+                temporal_features = self._compute_temporal_consistency(frames)
+                if temporal_features:
+                    features['temporal'] = temporal_features
+            
+            return features if features else None
+            
+        except Exception as e:
+            print(f"⚠️ 提取额外特征失败: {e}")
+            return None
+
+    def _compute_temporal_consistency(self, frames):
+        """计算时序一致性特征"""
+        try:
+            # 计算相邻帧之间的差异
+            frame_diffs = []
+            for i in range(len(frames) - 1):
+                diff = np.mean(np.abs(frames[i+1].astype(float) - frames[i].astype(float)))
+                frame_diffs.append(diff)
+            
+            if frame_diffs:
+                return {
+                    'mean_frame_diff': np.mean(frame_diffs),
+                    'std_frame_diff': np.std(frame_diffs),
+                    'max_frame_diff': np.max(frame_diffs),
+                    'temporal_smoothness': 1.0 / (1.0 + np.std(frame_diffs))
+                }
+            
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ 计算时序特征失败: {e}")
+            return None
 
     def _create_default_frames(self):
         """创建默认帧数据"""
@@ -164,5 +261,12 @@ class DeepfakeVideoDataset(Dataset):
                 'cache_size': len(self.frame_cache)
             }
         return None
+
+    def enable_ensemble_mode(self):
+        """启用集成模式，提取所有可用特征"""
+        self.extract_fourier = globals().get('SCIPY_AVAILABLE', False)
+        self.extract_compression = True
+        self.use_mtcnn = globals().get('MTCNN_AVAILABLE', False)
+        print("🎯 启用集成模式：所有特征提取已激活")
 
 print("✅ 数据集类定义完成")

@@ -49,6 +49,14 @@ from sklearn.model_selection import train_test_split
 import psutil
 import traceback
 
+# 高精度人脸检测 - MTCNN
+try:
+    from mtcnn import MTCNN
+    MTCNN_AVAILABLE = True
+    print("✅ MTCNN已安装，支持高精度人脸检测")
+except ImportError:
+    MTCNN_AVAILABLE = False
+    print("⚠️ MTCNN未安装，将使用OpenCV人脸检测")
 
 # 视频处理 (PyAV)
 try:
@@ -67,5 +75,15 @@ try:
 except ImportError:
     ALBUMENTATIONS_AVAILABLE = False
     print("警告: albumentations未安装，将使用基础数据增强")
+
+# 频域分析支持
+try:
+    from scipy import fftpack
+    from scipy.signal import butter, filtfilt
+    SCIPY_AVAILABLE = True
+    print("✅ SciPy已安装，支持频域分析")
+except ImportError:
+    SCIPY_AVAILABLE = False
+    print("⚠️ SciPy未安装，频域分析功能受限")
 
 print("✅ 所有库导入完成")

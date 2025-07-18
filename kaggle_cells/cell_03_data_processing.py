@@ -1,11 +1,11 @@
 def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 224),
-                                  quality_threshold=20, use_gpu=True):
-    """GPU加速的帧提取函数"""
+                                  quality_threshold=20, use_gpu=True, use_mtcnn=True):
+    """GPU加速的帧提取函数 - 集成MTCNN人脸检测"""
     try:
         # 检查PyAV是否可用
         if not globals().get('PYAV_AVAILABLE', False):
             print(f"PyAV不可用，使用CPU回退处理: {video_path}")
-            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold)
+            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold, use_mtcnn)
             
         # 使用torchvision的GPU加速视频读取
         if use_gpu and torch.cuda.is_available():
@@ -19,7 +19,7 @@ def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 
             # video_tensor shape: (T, H, W, C)
         except Exception as e:
             print(f"GPU视频读取失败，回退到CPU: {e}")
-            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold)
+            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold, use_mtcnn)
         
         if video_tensor.size(0) == 0:
             return []
@@ -85,14 +85,132 @@ def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 
         frames_cpu = selected_frames.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
         frames_list = [frame for frame in frames_cpu]
         
+        # 应用MTCNN人脸检测和裁剪
+        if use_mtcnn and globals().get('MTCNN_AVAILABLE', False):
+            frames_list = apply_mtcnn_face_detection(frames_list, target_size)
+        
         return frames_list
         
     except Exception as e:
         print(f"GPU帧提取失败，回退到CPU: {e}")
-        return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold)
+        return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold, use_mtcnn)
 
-def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(224, 224), quality_threshold=20):
-    """CPU回退的帧提取函数"""
+def apply_mtcnn_face_detection(frames, target_size=(224, 224)):
+    """使用MTCNN进行人脸检测和裁剪"""
+    try:
+        detector = MTCNN(min_face_size=40, scale_factor=0.7, steps_threshold=[0.6, 0.7, 0.8])
+        processed_frames = []
+        
+        for frame in frames:
+            # MTCNN需要RGB格式
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if len(frame.shape) == 3 else frame
+            
+            # 检测人脸
+            results = detector.detect_faces(frame_rgb)
+            
+            if results and len(results) > 0:
+                # 选择置信度最高的人脸
+                best_face = max(results, key=lambda x: x['confidence'])
+                
+                if best_face['confidence'] > 0.9:  # 高置信度阈值
+                    # 提取人脸区域
+                    x, y, w, h = best_face['box']
+                    
+                    # 扩展边界框以包含更多上下文
+                    margin = 0.2
+                    x_margin = int(w * margin)
+                    y_margin = int(h * margin)
+                    
+                    x1 = max(0, x - x_margin)
+                    y1 = max(0, y - y_margin)
+                    x2 = min(frame_rgb.shape[1], x + w + x_margin)
+                    y2 = min(frame_rgb.shape[0], y + h + y_margin)
+                    
+                    # 裁剪人脸
+                    face_crop = frame_rgb[y1:y2, x1:x2]
+                    
+                    # 调整大小
+                    face_resized = cv2.resize(face_crop, target_size)
+                    processed_frames.append(face_resized)
+                else:
+                    # 置信度不够，使用原始帧
+                    processed_frames.append(cv2.resize(frame_rgb, target_size))
+            else:
+                # 没有检测到人脸，使用原始帧
+                processed_frames.append(cv2.resize(frame_rgb, target_size))
+        
+        return processed_frames
+        
+    except Exception as e:
+        print(f"MTCNN人脸检测失败，使用原始帧: {e}")
+        return [cv2.resize(frame, target_size) for frame in frames]
+
+def extract_fourier_features(frame):
+    """提取频域特征用于深度伪造检测"""
+    if not globals().get('SCIPY_AVAILABLE', False):
+        return None
+    
+    try:
+        # 转换为灰度图
+        if len(frame.shape) == 3:
+            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = frame
+        
+        # 应用傅里叶变换
+        f_transform = np.fft.fft2(gray)
+        f_shift = np.fft.fftshift(f_transform)
+        
+        # 计算幅度谱
+        magnitude_spectrum = np.log(np.abs(f_shift) + 1)
+        
+        # 提取频域统计特征
+        features = {
+            'mean_magnitude': np.mean(magnitude_spectrum),
+            'std_magnitude': np.std(magnitude_spectrum),
+            'max_magnitude': np.max(magnitude_spectrum),
+            'energy': np.sum(magnitude_spectrum ** 2),
+            'entropy': -np.sum(magnitude_spectrum * np.log(magnitude_spectrum + 1e-10))
+        }
+        
+        return features
+        
+    except Exception as e:
+        print(f"频域特征提取失败: {e}")
+        return None
+
+def analyze_compression_artifacts(frame):
+    """分析压缩伪影特征"""
+    try:
+        # 转换为灰度图
+        if len(frame.shape) == 3:
+            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = frame
+        
+        # DCT变换分析（JPEG压缩伪影）
+        dct = cv2.dct(np.float32(gray))
+        
+        # 计算DCT系数的统计特征
+        features = {
+            'dct_mean': np.mean(dct),
+            'dct_std': np.std(dct),
+            'dct_energy': np.sum(dct ** 2),
+            'high_freq_energy': np.sum(dct[gray.shape[0]//2:, gray.shape[1]//2:] ** 2)
+        }
+        
+        # 边缘检测强度
+        edges = cv2.Canny(gray, 50, 150)
+        features['edge_density'] = np.sum(edges > 0) / edges.size
+        
+        return features
+        
+    except Exception as e:
+        print(f"压缩伪影分析失败: {e}")
+        return None
+
+def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(224, 224), quality_threshold=20, use_mtcnn=True):
+    """CPU回退的帧提取函数 - 集成MTCNN"""
     cap = cv2.VideoCapture(video_path)
     frames = []
 
@@ -140,13 +258,17 @@ def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(224, 224
     while len(frames) < max_frames and len(frames) > 0:
         frames.append(frames[-1].copy())
 
+    # 应用MTCNN人脸检测
+    if use_mtcnn and globals().get('MTCNN_AVAILABLE', False):
+        frames = apply_mtcnn_face_detection(frames, target_size)
+
     return frames[:max_frames]
 
 # 为了向后兼容，保留原函数名
 def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(224, 224),
-                                   quality_threshold=20, skip_frames=3):
-    """兼容性包装函数，优先使用GPU加速"""
-    return extract_frames_gpu_accelerated(video_path, max_frames, target_size, quality_threshold)
+                                   quality_threshold=20, skip_frames=3, use_mtcnn=True):
+    """兼容性包装函数，优先使用GPU加速，集成MTCNN"""
+    return extract_frames_gpu_accelerated(video_path, max_frames, target_size, quality_threshold, use_mtcnn=use_mtcnn)
 
 def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16, max_real=None, max_fake=None):
     """简化的视频处理函数"""

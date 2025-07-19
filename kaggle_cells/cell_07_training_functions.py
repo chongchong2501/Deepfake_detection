@@ -95,6 +95,7 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                             total_ensemble_loss += weight * loss
                         
                         loss = total_ensemble_loss
+                        pred_probs = torch.sigmoid(outputs['ensemble'])
                         
                         # 更新集成损失统计
                         for key, l in losses.items():
@@ -104,6 +105,7 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                         if outputs.dim() > 1:
                             outputs = outputs.squeeze(-1)
                         loss = criterion(outputs, labels)
+                        pred_probs = torch.sigmoid(outputs)
                 
                 # 混合精度反向传播
                 scaler.scale(loss).backward()
@@ -145,13 +147,11 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                         total_ensemble_loss += weight * loss_item
                     
                     loss = total_ensemble_loss
+                    pred_probs = torch.sigmoid(outputs['ensemble'])
                     
                     # 更新集成损失统计
                     for key, l in losses.items():
                         ensemble_losses[key] += l.item()
-                    
-                    # 使用集成输出计算准确率
-                    pred_probs = torch.sigmoid(outputs['ensemble'])
                 else:
                     # 标准模式
                     if outputs.dim() > 1:
@@ -166,6 +166,10 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                     torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip)
                 
                 optimizer.step()
+            
+            # 确保pred_probs是正确的张量格式
+            if pred_probs.dim() > 1:
+                pred_probs = pred_probs.squeeze(-1)
             
             # 计算准确率
             predictions = (pred_probs > 0.5).float()
@@ -193,18 +197,29 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
             
         except Exception as e:
             print(f"⚠️ 训练批次 {batch_idx} 出错: {e}")
+            import traceback
+            print(f"详细错误信息: {traceback.format_exc()}")
             continue
+    
+    # 检查是否有有效的训练数据
+    if total_samples == 0:
+        print("⚠️ 警告: 没有成功处理任何训练批次!")
+        return {
+            'loss': float('inf'),
+            'accuracy': 0.0,
+            'learning_rate': optimizer.param_groups[0]['lr']
+        }
     
     # 学习率调度
     if scheduler is not None:
         if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-            scheduler.step(total_loss / len(train_loader))
+            scheduler.step(total_loss / max(len(train_loader), 1))
         else:
             scheduler.step()
     
     # 返回训练结果
-    avg_loss = total_loss / len(train_loader)
-    accuracy = correct_predictions / total_samples
+    avg_loss = total_loss / max(len(train_loader), 1)
+    accuracy = correct_predictions / max(total_samples, 1)
     
     results = {
         'loss': avg_loss,
@@ -303,8 +318,8 @@ def validate_epoch(model, val_loader, criterion, device, ensemble_mode=False):
                         total_ensemble_loss += weight * loss_item
                         
                         # 保存预测结果
-                        pred_probs = torch.sigmoid(pred)
-                        ensemble_predictions[key].extend(pred_probs.cpu().numpy())
+                        pred_probs_item = torch.sigmoid(pred)
+                        ensemble_predictions[key].extend(pred_probs_item.cpu().numpy())
                         ensemble_losses[key] += loss_item.item()
                     
                     loss = total_ensemble_loss
@@ -315,6 +330,10 @@ def validate_epoch(model, val_loader, criterion, device, ensemble_mode=False):
                         outputs = outputs.squeeze(-1)
                     loss = criterion(outputs, labels)
                     pred_probs = torch.sigmoid(outputs)
+                
+                # 确保pred_probs是正确的张量格式
+                if pred_probs.dim() > 1:
+                    pred_probs = pred_probs.squeeze(-1)
                 
                 # 计算准确率
                 predictions = (pred_probs > 0.5).float()
@@ -338,11 +357,27 @@ def validate_epoch(model, val_loader, criterion, device, ensemble_mode=False):
                 
             except Exception as e:
                 print(f"⚠️ 验证批次 {batch_idx} 出错: {e}")
+                import traceback
+                print(f"详细错误信息: {traceback.format_exc()}")
                 continue
     
+    # 检查是否有有效的验证数据
+    if total_samples == 0:
+        print("⚠️ 警告: 没有成功处理任何验证批次!")
+        return {
+            'loss': float('inf'),
+            'accuracy': 0.0,
+            'auc': 0.0,
+            'precision': 0.0,
+            'recall': 0.0,
+            'f1': 0.0,
+            'predictions': [],
+            'labels': []
+        }
+    
     # 计算最终指标
-    avg_loss = total_loss / len(val_loader)
-    accuracy = correct_predictions / total_samples
+    avg_loss = total_loss / max(len(val_loader), 1)
+    accuracy = correct_predictions / max(total_samples, 1)
     
     # 计算AUC等高级指标
     try:

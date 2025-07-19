@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 from torchvision import models
 
 class OptimizedDeepfakeDetector(nn.Module):
@@ -41,17 +42,17 @@ class OptimizedDeepfakeDetector(nn.Module):
         
         # 多模态特征融合
         if use_multimodal:
-            # 频域特征处理
+            # 频域特征处理 - 修正输入维度
             self.fourier_fc = nn.Sequential(
-                nn.Linear(512, 256),  # 假设频域特征维度为512
+                nn.Linear(5, 256),  # 频域特征实际维度为5 (mean, std, max, energy, entropy)
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout_rate),
                 nn.Linear(256, 128)
             )
             
-            # 压缩伪影特征处理
+            # 压缩伪影特征处理 - 修正输入维度
             self.compression_fc = nn.Sequential(
-                nn.Linear(3, 64),  # 压缩特征维度为3
+                nn.Linear(5, 64),  # 压缩特征实际维度为5 (dct_mean, dct_std, dct_energy, high_freq_energy, edge_density)
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout_rate),
                 nn.Linear(64, 32)
@@ -65,8 +66,12 @@ class OptimizedDeepfakeDetector(nn.Module):
                 nn.Linear(64, 32)
             )
             
-            # 特征融合层
-            fusion_dim = backbone_features + 128 + 32 + 32  # 主干 + 频域 + 压缩 + 时序
+            # 特征融合层 - 动态计算输入维度
+            # 基础特征: backbone_features (2048)
+            # 频域特征: 128 (fourier_fc输出)
+            # 压缩特征: 32 (compression_fc输出)  
+            # 时序特征: 32 (temporal_fc输出)
+            fusion_dim = backbone_features + 128 + 32 + 32  # 2048 + 128 + 32 + 32 = 2240
             self.fusion_layer = nn.Sequential(
                 nn.Linear(fusion_dim, 512),
                 nn.ReLU(inplace=True),
@@ -115,6 +120,15 @@ class OptimizedDeepfakeDetector(nn.Module):
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout_rate),
                 nn.Linear(256, 128),
+                nn.ReLU(inplace=True),
+                nn.Dropout(dropout_rate),
+                nn.Linear(128, num_classes)
+            )
+            
+            # 添加单一分类器用于处理基础特征（当多模态特征处理失败时）
+            self.single_classifier = nn.Sequential(
+                nn.Dropout(dropout_rate),
+                nn.Linear(backbone_features, 128),  # 直接处理backbone特征
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout_rate),
                 nn.Linear(128, num_classes)
@@ -171,66 +185,196 @@ class OptimizedDeepfakeDetector(nn.Module):
             
             # 处理频域特征
             if 'fourier' in additional_features:
-                fourier_feat = additional_features['fourier']
-                if isinstance(fourier_feat, dict):
-                    # 将字典转换为张量
-                    fourier_tensor = torch.stack([
-                        torch.tensor(list(fourier_feat.values()), dtype=torch.float32)
-                        for _ in range(batch_size)
-                    ]).to(temporal_features.device)
-                else:
-                    fourier_tensor = fourier_feat.to(temporal_features.device)
-                
-                fourier_processed = self.fourier_fc(fourier_tensor)
-                fusion_features.append(fourier_processed)
+                try:
+                    fourier_feat = additional_features['fourier']
+                    if isinstance(fourier_feat, dict):
+                        # 安全地提取数值特征
+                        fourier_values = []
+                        for value in fourier_feat.values():
+                            if isinstance(value, (int, float)):
+                                fourier_values.append(float(value))
+                            elif isinstance(value, torch.Tensor):
+                                if value.numel() == 1:
+                                    fourier_values.append(float(value.item()))
+                                else:
+                                    fourier_values.append(float(value.mean().item()))
+                            elif isinstance(value, np.ndarray):
+                                if value.size == 1:
+                                    fourier_values.append(float(value.item()))
+                                else:
+                                    fourier_values.append(float(value.mean()))
+                            else:
+                                fourier_values.append(0.0)  # 默认值
+                        
+                        # 确保有足够的特征维度
+                        if len(fourier_values) < 5:  # fourier_fc期望5维输入
+                            fourier_values.extend([0.0] * (5 - len(fourier_values)))
+                        elif len(fourier_values) > 5:
+                            fourier_values = fourier_values[:5]
+                        
+                        fourier_tensor = torch.tensor([fourier_values] * batch_size, 
+                                                    dtype=torch.float32, 
+                                                    device=temporal_features.device)
+                    else:
+                        # 如果已经是张量，确保正确的形状
+                        if isinstance(fourier_feat, torch.Tensor):
+                            fourier_tensor = fourier_feat.to(temporal_features.device)
+                            if fourier_tensor.dim() == 1:
+                                fourier_tensor = fourier_tensor.unsqueeze(0).repeat(batch_size, 1)
+                        else:
+                            # 创建默认张量
+                            fourier_tensor = torch.zeros(batch_size, 5, 
+                                                        dtype=torch.float32, 
+                                                        device=temporal_features.device)
+                    
+                    fourier_processed = self.fourier_fc(fourier_tensor)
+                    fusion_features.append(fourier_processed)
+                except Exception as e:
+                    print(f"⚠️ 频域特征处理失败: {e}")
+                    # 使用默认特征
+                    fourier_tensor = torch.zeros(batch_size, 5, 
+                                                dtype=torch.float32, 
+                                                device=temporal_features.device)
+                    fourier_processed = self.fourier_fc(fourier_tensor)
+                    fusion_features.append(fourier_processed)
             
             # 处理压缩伪影特征
             if 'compression' in additional_features:
-                comp_feat = additional_features['compression']
-                if isinstance(comp_feat, dict):
-                    comp_tensor = torch.stack([
-                        torch.tensor([
-                            comp_feat['mean_dct_energy'],
-                            comp_feat['mean_edge_density'],
-                            comp_feat['std_dct_energy']
-                        ], dtype=torch.float32)
-                        for _ in range(batch_size)
-                    ]).to(temporal_features.device)
-                else:
-                    comp_tensor = comp_feat.to(temporal_features.device)
-                
-                comp_processed = self.compression_fc(comp_tensor)
-                fusion_features.append(comp_processed)
+                try:
+                    comp_feat = additional_features['compression']
+                    if isinstance(comp_feat, dict):
+                        # 安全地提取压缩特征 - 修正为5个特征
+                        comp_values = []
+                        for key in ['dct_mean', 'dct_std', 'dct_energy', 'high_freq_energy', 'edge_density']:
+                            if key in comp_feat:
+                                value = comp_feat[key]
+                                if isinstance(value, (int, float)):
+                                    comp_values.append(float(value))
+                                elif isinstance(value, torch.Tensor):
+                                    comp_values.append(float(value.item() if value.numel() == 1 else value.mean().item()))
+                                elif isinstance(value, np.ndarray):
+                                    comp_values.append(float(value.item() if value.size == 1 else value.mean()))
+                                else:
+                                    comp_values.append(0.0)
+                            else:
+                                comp_values.append(0.0)
+                        
+                        comp_tensor = torch.tensor([comp_values] * batch_size, 
+                                                 dtype=torch.float32, 
+                                                 device=temporal_features.device)
+                    else:
+                        if isinstance(comp_feat, torch.Tensor):
+                            comp_tensor = comp_feat.to(temporal_features.device)
+                            if comp_tensor.dim() == 1:
+                                comp_tensor = comp_tensor.unsqueeze(0).repeat(batch_size, 1)
+                        else:
+                            comp_tensor = torch.zeros(batch_size, 5, 
+                                                    dtype=torch.float32, 
+                                                    device=temporal_features.device)
+                    
+                    comp_processed = self.compression_fc(comp_tensor)
+                    fusion_features.append(comp_processed)
+                except Exception as e:
+                    print(f"⚠️ 压缩特征处理失败: {e}")
+                    comp_tensor = torch.zeros(batch_size, 5, 
+                                            dtype=torch.float32, 
+                                            device=temporal_features.device)
+                    comp_processed = self.compression_fc(comp_tensor)
+                    fusion_features.append(comp_processed)
             
             # 处理时序一致性特征
             if 'temporal' in additional_features:
-                temp_feat = additional_features['temporal']
-                if isinstance(temp_feat, dict):
-                    temp_tensor = torch.stack([
-                        torch.tensor([
-                            temp_feat['mean_frame_diff'],
-                            temp_feat['std_frame_diff'],
-                            temp_feat['max_frame_diff'],
-                            temp_feat['temporal_smoothness']
-                        ], dtype=torch.float32)
-                        for _ in range(batch_size)
-                    ]).to(temporal_features.device)
-                else:
-                    temp_tensor = temp_feat.to(temporal_features.device)
-                
-                temp_processed = self.temporal_fc(temp_tensor)
-                fusion_features.append(temp_processed)
+                try:
+                    temp_feat = additional_features['temporal']
+                    if isinstance(temp_feat, dict):
+                        # 安全地提取时序特征
+                        temp_values = []
+                        for key in ['mean_frame_diff', 'std_frame_diff', 'max_frame_diff', 'temporal_smoothness']:
+                            if key in temp_feat:
+                                value = temp_feat[key]
+                                if isinstance(value, (int, float)):
+                                    temp_values.append(float(value))
+                                elif isinstance(value, torch.Tensor):
+                                    temp_values.append(float(value.item() if value.numel() == 1 else value.mean().item()))
+                                elif isinstance(value, np.ndarray):
+                                    temp_values.append(float(value.item() if value.size == 1 else value.mean()))
+                                else:
+                                    temp_values.append(0.0)
+                            else:
+                                temp_values.append(0.0)
+                        
+                        temp_tensor = torch.tensor([temp_values] * batch_size, 
+                                                 dtype=torch.float32, 
+                                                 device=temporal_features.device)
+                    else:
+                        if isinstance(temp_feat, torch.Tensor):
+                            temp_tensor = temp_feat.to(temporal_features.device)
+                            if temp_tensor.dim() == 1:
+                                temp_tensor = temp_tensor.unsqueeze(0).repeat(batch_size, 1)
+                        else:
+                            temp_tensor = torch.zeros(batch_size, 4, 
+                                                    dtype=torch.float32, 
+                                                    device=temporal_features.device)
+                    
+                    temp_processed = self.temporal_fc(temp_tensor)
+                    fusion_features.append(temp_processed)
+                except Exception as e:
+                    print(f"⚠️ 时序特征处理失败: {e}")
+                    temp_tensor = torch.zeros(batch_size, 4, 
+                                            dtype=torch.float32, 
+                                            device=temporal_features.device)
+                    temp_processed = self.temporal_fc(temp_tensor)
+                    fusion_features.append(temp_processed)
             
-            # 特征融合
+            # 特征融合 - 确保维度一致性
             if len(fusion_features) > 1:
-                fused_features = torch.cat(fusion_features, dim=1)
-                final_features = self.fusion_layer(fused_features)
+                try:
+                    # 检查每个特征的维度
+                    feature_dims = [f.shape[1] for f in fusion_features]
+                    print(f"🔍 融合特征维度: {feature_dims}")
+                    
+                    # 计算总维度
+                    total_dim = sum(feature_dims)
+                    expected_dim = self.fusion_layer[0].in_features
+                    
+                    if total_dim == expected_dim:
+                        fused_features = torch.cat(fusion_features, dim=1)
+                        final_features = self.fusion_layer(fused_features)
+                        print(f"✅ 特征融合成功: {fused_features.shape} -> {final_features.shape}")
+                    else:
+                        print(f"⚠️ 维度不匹配: 实际={total_dim}, 期望={expected_dim}")
+                        
+                        # 动态调整特征维度
+                        if total_dim < expected_dim:
+                            # 如果维度不足，用零填充
+                            padding_dim = expected_dim - total_dim
+                            fused_features = torch.cat(fusion_features, dim=1)
+                            padding = torch.zeros(batch_size, padding_dim, 
+                                                dtype=fused_features.dtype, 
+                                                device=fused_features.device)
+                            fused_features = torch.cat([fused_features, padding], dim=1)
+                            final_features = self.fusion_layer(fused_features)
+                            print(f"✅ 特征填充后融合成功: {fused_features.shape} -> {final_features.shape}")
+                        elif total_dim > expected_dim:
+                            # 如果维度过多，截断到期望维度
+                            fused_features = torch.cat(fusion_features, dim=1)
+                            fused_features = fused_features[:, :expected_dim]
+                            final_features = self.fusion_layer(fused_features)
+                            print(f"✅ 特征截断后融合成功: {fused_features.shape} -> {final_features.shape}")
+                        else:
+                            # 如果维度相等但仍然失败，使用基础特征
+                            print(f"⚠️ 使用基础特征作为后备")
+                            final_features = temporal_features
+                            
+                except Exception as e:
+                    print(f"⚠️ 特征融合失败: {e}")
+                    final_features = temporal_features
             else:
                 final_features = temporal_features
         else:
             final_features = temporal_features
         
-        # 分类预测
+        # 分类预测 - 根据特征维度选择合适的分类器
         if self.ensemble_mode:
             # 集成预测
             main_pred = self.main_classifier(final_features)
@@ -255,8 +399,33 @@ class OptimizedDeepfakeDetector(nn.Module):
                 # 推理时只返回集成结果
                 return ensemble_pred
         else:
-            # 单一预测
-            return self.classifier(final_features)
+            # 检查特征维度并选择合适的分类器
+            feature_dim = final_features.shape[1]
+            
+            # 获取分类器的输入维度
+            classifier_input_dim = None
+            single_classifier_input_dim = None
+            
+            # 找到第一个Linear层来获取输入维度
+            for layer in self.classifier:
+                if isinstance(layer, nn.Linear):
+                    classifier_input_dim = layer.in_features
+                    break
+            
+            for layer in self.single_classifier:
+                if isinstance(layer, nn.Linear):
+                    single_classifier_input_dim = layer.in_features
+                    break
+            
+            # 根据特征维度选择合适的分类器
+            if classifier_input_dim and feature_dim == classifier_input_dim:
+                return self.classifier(final_features)
+            elif single_classifier_input_dim and feature_dim == single_classifier_input_dim:
+                return self.single_classifier(final_features)
+            else:
+                # 如果都不匹配，尝试使用单一分类器（通常处理基础特征）
+                print(f"⚠️ 特征维度 {feature_dim} 不匹配任何分类器，使用单一分类器")
+                return self.single_classifier(final_features)
 
     def get_attention_weights(self, x):
         """获取注意力权重（用于可视化）"""

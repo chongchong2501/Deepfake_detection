@@ -2,6 +2,33 @@
 
 本目录包含深度伪造检测系统的所有核心模块，按执行顺序编号。
 
+## 🌟 Kaggle 环境支持
+
+本项目已完全适配 Kaggle 环境，支持：
+- ✅ **自动环境检测**: 自动识别 Kaggle/本地环境
+- ✅ **动态模块加载**: 在 Kaggle 中自动处理模块依赖
+- ✅ **路径自适应**: 数据路径根据环境自动调整
+- ✅ **GPU/CPU 回退**: 自动适配可用计算资源
+- ✅ **一键运行**: 支持单文件执行完整流程
+
+### 🚀 Kaggle 快速开始
+
+**方法一：一键运行（推荐）**
+```python
+# 在 Kaggle Notebook 中直接运行
+exec(open('cell_12_training_loop.py').read())
+```
+
+**方法二：分步执行**
+```python
+# 按顺序在不同 Cell 中执行
+exec(open('cell_01_imports_and_setup.py').read())
+exec(open('cell_02_global_config.py').read())
+# ... 依次执行其他文件
+```
+
+📖 **详细说明**: 请查看 [`KAGGLE_USAGE.md`](./KAGGLE_USAGE.md) 获取完整的 Kaggle 使用指南。
+
 ## 📋 执行顺序
 
 ### 🔧 环境准备 (Cell 01-02)
@@ -62,6 +89,7 @@ python cell_15_ensemble_inference.py
 
 ## ⚙️ 配置要点
 
+### 本地环境配置
 ```python
 # GPU内存优化
 BATCH_SIZE = 4      # 根据GPU内存调整
@@ -73,8 +101,40 @@ ENABLE_FREQUENCY = True  # 频域特征分析
 ENABLE_ENSEMBLE = True   # 集成学习模式
 ```
 
+### Kaggle 环境配置
+```python
+# Kaggle 优化参数（在 cell_02_global_config.py 中）
+BATCH_SIZE = 8          # Kaggle GPU 内存优化
+MAX_REAL_VIDEOS = 500   # 限制真实视频数量
+MAX_FAKE_VIDEOS = 1500  # 限制假视频数量
+MAX_FRAMES = 8          # 每视频最大帧数
+
+# 数据路径（自动检测）
+BASE_DATA_DIR = '/kaggle/input/ff-c23/FaceForensics++_C23' if IS_KAGGLE else './dataset/FaceForensics++_C23'
+```
+
 ## 🔍 故障排除
 
+### 本地环境
 - **内存不足**: 减小BATCH_SIZE或禁用GPU预处理
 - **依赖缺失**: 检查MTCNN和SciPy安装
 - **训练中断**: 模型会自动保存检查点，可继续训练
+
+### Kaggle 环境
+- **模块导入错误**: 确保所有 `.py` 文件都上传到 Notebook 根目录
+- **内存不足**: 减少 `MAX_REAL_VIDEOS`、`MAX_FAKE_VIDEOS` 和 `BATCH_SIZE`
+- **数据集路径**: 确保添加 FaceForensics++ 数据集作为输入
+- **执行顺序**: 严格按照文件编号顺序执行
+
+## 📁 文件结构
+
+```
+kaggle_cells/
+├── README.md                    # 项目说明
+├── KAGGLE_USAGE.md             # Kaggle 详细使用指南
+├── cell_01_imports_and_setup.py
+├── cell_02_global_config.py
+├── cell_03_data_processing.py
+├── ...
+└── cell_15_ensemble_inference.py
+```

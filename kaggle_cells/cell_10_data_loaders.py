@@ -17,7 +17,9 @@ train_dataset = DeepfakeVideoDataset(
     transform=train_transform,
     max_frames=16,
     gpu_preprocessing=False,  # 在多进程环境中禁用GPU预处理
-    cache_frames=False  # 避免内存压力
+    cache_frames=False,  # 避免内存压力
+    extract_fourier=True,  # 启用频域特征提取
+    extract_compression=True  # 启用压缩特征提取
 )
 
 val_dataset = DeepfakeVideoDataset(
@@ -25,7 +27,9 @@ val_dataset = DeepfakeVideoDataset(
     transform=val_transform,
     max_frames=16,
     gpu_preprocessing=False,
-    cache_frames=False
+    cache_frames=False,
+    extract_fourier=True,  # 启用频域特征提取
+    extract_compression=True  # 启用压缩特征提取
 )
 
 test_dataset = DeepfakeVideoDataset(
@@ -33,7 +37,9 @@ test_dataset = DeepfakeVideoDataset(
     transform=val_transform,
     max_frames=16,
     gpu_preprocessing=False,
-    cache_frames=False
+    cache_frames=False,
+    extract_fourier=True,  # 启用频域特征提取
+    extract_compression=True  # 启用压缩特征提取
 )
 
 print(f"📊 数据集大小: 训练={len(train_dataset)}, 验证={len(val_dataset)}, 测试={len(test_dataset)}")

@@ -1,5 +1,9 @@
 # Cell 6: 损失函数和工具类
 
+import torch
+import torch.nn as nn
+from torchvision import transforms
+
 class FocalLoss(nn.Module):
     """焦点损失函数 - 解决类别不平衡问题"""
     

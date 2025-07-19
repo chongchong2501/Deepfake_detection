@@ -99,7 +99,6 @@ class DeepfakeVideoDataset(Dataset):
             # 如果没有预提取的帧，则实时提取
             if frames is None:
                 try:
-                    from .cell_03_data_processing import extract_frames_memory_efficient
                     frames = extract_frames_memory_efficient(
                         video_path, 
                         max_frames=self.max_frames,
@@ -167,7 +166,6 @@ class DeepfakeVideoDataset(Dataset):
             if self.extract_fourier:
                 # 提取频域特征（使用中间帧）
                 mid_frame = frames[len(frames) // 2]
-                from .cell_03_data_processing import extract_fourier_features
                 fourier_features = extract_fourier_features(mid_frame)
                 if fourier_features:
                     features['fourier'] = fourier_features
@@ -176,17 +174,18 @@ class DeepfakeVideoDataset(Dataset):
                 # 提取压缩伪影特征
                 compression_features = []
                 for frame in frames[::4]:  # 每4帧采样一次
-                    from .cell_03_data_processing import analyze_compression_artifacts
                     comp_feat = analyze_compression_artifacts(frame)
                     if comp_feat:
                         compression_features.append(comp_feat)
                 
                 if compression_features:
-                    # 聚合压缩特征
+                    # 聚合压缩特征 - 使用与模型期望匹配的键名
                     features['compression'] = {
-                        'mean_dct_energy': np.mean([f['dct_energy'] for f in compression_features]),
-                        'mean_edge_density': np.mean([f['edge_density'] for f in compression_features]),
-                        'std_dct_energy': np.std([f['dct_energy'] for f in compression_features])
+                        'dct_mean': np.mean([f.get('dct_mean', f.get('dct_energy', 0)) for f in compression_features]),
+                        'dct_std': np.std([f.get('dct_mean', f.get('dct_energy', 0)) for f in compression_features]),
+                        'dct_energy': np.mean([f.get('dct_energy', 0) for f in compression_features]),
+                        'high_freq_energy': np.mean([f.get('high_freq_energy', f.get('dct_energy', 0) * 0.1) for f in compression_features]),
+                        'edge_density': np.mean([f.get('edge_density', 0) for f in compression_features])
                     }
             
             # 计算时序一致性特征

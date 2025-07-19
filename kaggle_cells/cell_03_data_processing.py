@@ -1,3 +1,16 @@
+# Cell 3: 数据处理函数
+
+import os
+import cv2
+import numpy as np
+import torch
+import torch.nn.functional as F
+import random
+import pandas as pd
+from tqdm import tqdm
+from sklearn.model_selection import train_test_split
+from torchvision.io import read_video
+
 def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 224),
                                   quality_threshold=20, use_gpu=True, use_mtcnn=True):
     """GPU加速的帧提取函数 - 集成MTCNN人脸检测"""
@@ -271,7 +284,7 @@ def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(224,
     return extract_frames_gpu_accelerated(video_path, max_frames, target_size, quality_threshold, use_mtcnn=use_mtcnn)
 
 def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16, max_real=None, max_fake=None):
-    """简化的视频处理函数"""
+    """简化的视频处理函数 - 优化假视频平均分配"""
     # 向后兼容：如果指定了新参数，使用新参数；否则使用旧参数
     if max_real is None:
         max_real = max_videos_per_class
@@ -309,23 +322,68 @@ def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16,
                 print(f"处理视频 {video_file} 时出错: {e}")
                 continue
 
-    # 处理伪造视频 - 支持总数限制
+    # 处理伪造视频 - 平均分配策略
     print("开始处理伪造视频...")
-    all_fake_videos = []
+    
+    # 统计每种方法的可用视频数量
+    method_videos = {}
+    total_available_fake = 0
+    
     for method in fake_methods:
         method_dir = os.path.join(base_data_dir, method)
         if os.path.exists(method_dir):
-            method_videos = [os.path.join(method_dir, f) for f in os.listdir(method_dir) 
-                           if f.endswith(('.mp4', '.avi', '.mov'))]
-            all_fake_videos.extend([(v, method) for v in method_videos])
+            videos = [os.path.join(method_dir, f) for f in os.listdir(method_dir) 
+                     if f.endswith(('.mp4', '.avi', '.mov'))]
+            method_videos[method] = videos
+            total_available_fake += len(videos)
+            print(f"  {method}: {len(videos)} 个视频")
+        else:
+            method_videos[method] = []
+            print(f"  {method}: 目录不存在")
     
-    # 如果指定了总伪造视频数量，从所有方法中采样
-    if len(all_fake_videos) > max_fake:
-        all_fake_videos = random.sample(all_fake_videos, max_fake)
+    print(f"总共可用假视频: {total_available_fake} 个")
     
-    print(f"总共采样 {len(all_fake_videos)} 个伪造视频")
+    # 计算每种方法应该采样的视频数量（平均分配）
+    available_methods = [method for method in fake_methods if len(method_videos[method]) > 0]
+    if not available_methods:
+        print("❌ 未找到任何假视频方法")
+        return data_list
     
-    for video_path, method in tqdm(all_fake_videos, desc="处理伪造视频"):
+    videos_per_method = max_fake // len(available_methods)
+    remaining_videos = max_fake % len(available_methods)
+    
+    print(f"平均分配策略: 每种方法 {videos_per_method} 个视频")
+    if remaining_videos > 0:
+        print(f"剩余 {remaining_videos} 个视频将分配给前 {remaining_videos} 种方法")
+    
+    # 为每种方法采样视频
+    selected_fake_videos = []
+    for i, method in enumerate(available_methods):
+        # 计算当前方法应该采样的数量
+        current_method_quota = videos_per_method
+        if i < remaining_videos:  # 前几种方法多分配一个
+            current_method_quota += 1
+        
+        available_videos = method_videos[method]
+        
+        # 如果可用视频数量少于配额，全部使用
+        if len(available_videos) <= current_method_quota:
+            method_selected = available_videos
+            print(f"  {method}: 使用全部 {len(method_selected)} 个视频")
+        else:
+            # 随机采样指定数量
+            method_selected = random.sample(available_videos, current_method_quota)
+            print(f"  {method}: 采样 {len(method_selected)} 个视频")
+        
+        selected_fake_videos.extend([(v, method) for v in method_selected])
+    
+    print(f"总共选择 {len(selected_fake_videos)} 个假视频进行处理")
+    
+    # 打乱选择的假视频顺序
+    random.shuffle(selected_fake_videos)
+    
+    # 处理选择的假视频
+    for video_path, method in tqdm(selected_fake_videos, desc="处理伪造视频"):
         try:
             frames = extract_frames_memory_efficient(video_path, max_frames)
             
@@ -340,7 +398,18 @@ def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16,
             print(f"处理视频 {os.path.basename(video_path)} 时出错: {e}")
             continue
 
+    # 统计最终结果
+    method_counts = {}
+    for item in data_list:
+        if item['label'] == 1:  # 只统计假视频
+            method = item['method']
+            method_counts[method] = method_counts.get(method, 0) + 1
+    
     print(f"\n✅ 数据处理完成，共处理 {len(data_list)} 个视频")
+    print("假视频方法分布:")
+    for method, count in method_counts.items():
+        print(f"  {method}: {count} 个视频")
+    
     return data_list
 
 def create_dataset_split(data_list, test_size=0.2, val_size=0.1):

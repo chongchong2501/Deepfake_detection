@@ -10,11 +10,11 @@ print("🤖 创建和配置模型...")
 
 # 创建模型 - 针对Kaggle T4 GPU优化
 model = OptimizedDeepfakeDetector(
-    backbone='resnet50',
-    hidden_dim=512,
-    num_layers=2,
-    dropout=0.3,
-    use_attention=True
+    num_classes=1,
+    dropout_rate=0.3,
+    use_attention=True,
+    use_multimodal=True,  # 启用多模态特征融合
+    ensemble_mode=False   # 单模型模式
 ).to(device)
 
 print(f"✅ 模型已创建并移动到 {device}")

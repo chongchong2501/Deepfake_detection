@@ -1,5 +1,10 @@
 # Cell 2: 全局配置和工具函数 - Kaggle T4 优化版本
 
+import os
+import random
+import numpy as np
+import torch
+
 def set_seed(seed=42):
     """设置随机种子确保可重复性"""
     random.seed(seed)
@@ -37,7 +42,7 @@ for dir_name in ['./data', './models', './logs', './results']:
 
 # Kaggle环境检测
 IS_KAGGLE = os.path.exists('/kaggle')
-BASE_DATA_DIR = '/kaggle/input/ff-c23/FaceForensics++_C23' if IS_KAGGLE else './FaceForensics++_C23'
+BASE_DATA_DIR = '/kaggle/input/ff-c23/FaceForensics++_C23' if IS_KAGGLE else './dataset/FaceForensics++_C23'
 
 # 统一数据类型配置 - 全部使用FP32提升兼容性
 USE_FP32_ONLY = True  # 强制使用FP32，确保最佳兼容性

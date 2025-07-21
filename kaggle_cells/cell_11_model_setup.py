@@ -1,95 +1,108 @@
 # Cell 11: 模型初始化和训练配置 - Kaggle T4 GPU优化版本
 
+import torch
 import torch.nn as nn
+import torch.optim as optim
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from torch.cuda.amp import GradScaler
 
 print("🤖 创建和配置模型...")
 
-# 创建模型 - 使用更强的EfficientNet backbone
+# 创建模型 - 针对Kaggle T4 GPU优化
 model = OptimizedDeepfakeDetector(
-    backbone='efficientnet_b0',  # 使用EfficientNet
-    hidden_dim=512,
-    num_layers=2,
-    dropout=0.3,
-    use_attention=True
-)
-if torch.cuda.is_available() and torch.cuda.device_count() > 1:
-    print(f"使用多GPU训练: {torch.cuda.device_count()} GPUs")
-    model = nn.DataParallel(model)
-model = model.to(device)
+    num_classes=1,
+    dropout_rate=0.3,
+    use_attention=True,
+    use_multimodal=True,  # 启用多模态特征融合
+    ensemble_mode=False   # 单模型模式
+).to(device)
 
-# 单GPU配置
+print(f"✅ 模型已创建并移动到 {device}")
+print(f"📊 模型参数数量: {sum(p.numel() for p in model.parameters()):,}")
+
+# 优化GPU内存配置
 if torch.cuda.is_available():
-    torch.cuda.set_per_process_memory_fraction(0.9)
-    print("使用单GPU训练")
+    torch.cuda.set_per_process_memory_fraction(0.85)  # 提高内存利用率
+    print(f"🎮 GPU: {torch.cuda.get_device_name(0)}")
+    print(f"💾 GPU内存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f}GB")
 
-# 计算模型参数数量
-total_params = sum(p.numel() for p in model.parameters())
-trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+# 损失函数 - 使用类别权重平衡
+# 计算类别权重 - 修复版本
+if hasattr(train_dataset, 'real_count') and hasattr(train_dataset, 'fake_count'):
+    # 使用预计算的统计信息
+    real_count = train_dataset.real_count
+    fake_count = train_dataset.fake_count
+else:
+    # 回退方案：手动计算
+    if hasattr(train_dataset, 'data_list') and train_dataset.data_list is not None:
+        real_count = sum(1 for item in train_dataset.data_list if item['label'] == 0)
+        fake_count = sum(1 for item in train_dataset.data_list if item['label'] == 1)
+    elif hasattr(train_dataset, 'df') and train_dataset.df is not None:
+        real_count = len(train_dataset.df[train_dataset.df['label'] == 0])
+        fake_count = len(train_dataset.df[train_dataset.df['label'] == 1])
+    else:
+        # 默认值
+        real_count = 1
+        fake_count = 1
+        print("⚠️ 无法获取类别分布，使用默认权重")
 
-print(f"模型总参数数量: {total_params:,}")
-print(f"可训练参数数量: {trainable_params:,}")
-print(f"模型大小估计: {total_params * 4 / 1024**2:.1f} MB")
+# 确保计数不为零
+real_count = max(real_count, 1)
+fake_count = max(fake_count, 1)
 
-# 损失函数 - 使用平衡的配置，移除pos_weight偏向
-criterion = FocalLoss(alpha=0.25, gamma=2.0, pos_weight=None)  # 更平衡的参数
-print(f"损失函数: FocalLoss (alpha=0.25, gamma=2.0, 无pos_weight偏向)")
+pos_weight = torch.tensor([real_count / fake_count], device=device)
 
-# 优化器 - 降低学习率
-base_lr = 0.0001  # 降低学习率
+print(f"📊 类别分布 - 真实: {real_count}, 伪造: {fake_count}")
+print(f"⚖️ 正样本权重: {pos_weight.item():.2f}")
+
+# 使用FocalLoss处理类别不平衡
+criterion = FocalLoss(
+    alpha=0.25,
+    gamma=2.0,  # 降低gamma值，减少对困难样本的过度关注
+    pos_weight=pos_weight,
+    reduction='mean'
+)
+
+# 优化器配置 - 使用AdamW和学习率调度
 optimizer = optim.AdamW(
-    model.parameters(), 
-    lr=base_lr,
-    weight_decay=0.01
+    model.parameters(),
+    lr=2e-4,  # 提高初始学习率
+    weight_decay=1e-4,  # 增加权重衰减
+    betas=(0.9, 0.999),
+    eps=1e-8
 )
-print(f"优化器: AdamW (lr={base_lr})")
 
-# 学习率调度器 - 增加训练轮数
-scheduler = torch.optim.lr_scheduler.OneCycleLR(
+# 学习率调度器 - 使用余弦退火
+scheduler = CosineAnnealingWarmRestarts(
     optimizer,
-    max_lr=base_lr * 10,  # 调整最大学习率
-    epochs=50,  # 增加训练轮数
-    steps_per_epoch=len(train_loader),
-    pct_start=0.3,
-    anneal_strategy='cos'
+    T_0=10,  # 初始重启周期
+    T_mult=2,  # 周期倍增因子
+    eta_min=1e-6  # 最小学习率
 )
-print(f"学习率调度器: OneCycleLR (50 epochs)")
 
-# 早停机制 - 增加patience
-early_stopping = EarlyStopping(patience=15, min_delta=0.001)  # 增加patience
-print(f"早停机制: patience=15, min_delta=0.001")
+# 早停机制
+early_stopping = EarlyStopping(
+    patience=15,  # 增加耐心值
+    min_delta=0.001,
+    restore_best_weights=True
+)
 
-# 训练配置 - 统一使用FP32数据类型
-scaler = None
-print("数据类型: FP32 (确保兼容性)")
+# 混合精度训练 - 仅在支持的GPU上启用
+use_amp = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7
+if use_amp:
+    scaler = GradScaler()
+    print("✅ 启用混合精度训练 (AMP)")
+else:
+    scaler = None
+    print("📝 使用FP32训练 (兼容性模式)")
 
+# 训练配置
 num_epochs = 50  # 增加训练轮数
-print(f"训练轮数: {num_epochs}")
+print(f"🎯 训练配置:")
+print(f"  - 训练轮数: {num_epochs}")
+print(f"  - 初始学习率: {optimizer.param_groups[0]['lr']:.2e}")
+print(f"  - 权重衰减: {optimizer.param_groups[0]['weight_decay']:.2e}")
+print(f"  - 早停耐心值: {early_stopping.patience}")
+print(f"  - 混合精度: {'启用' if use_amp else '禁用'}")
 
-# 测试模型前向传播
-print("\n🔍 测试模型前向传播...")
-try:
-    model.eval()
-    with torch.no_grad():
-        sample_batch = next(iter(train_loader))
-        videos, labels = sample_batch
-        videos, labels = videos.to(device), labels.to(device)
-        
-        # 前向传播（统一使用FP32）
-        outputs, attention_weights = model(videos)
-        loss = criterion(outputs, labels)
-        
-        print(f"输入形状: {videos.shape}")
-        print(f"输入数据类型: {videos.dtype}")
-        print(f"输出形状: {outputs.shape}")
-        print(f"损失值: {loss.item():.4f}")
-        
-        # 显示概率范围
-        probs = torch.sigmoid(outputs)
-        print(f"概率范围: [{probs.min():.3f}, {probs.max():.3f}]")
-        
-        print("✅ 模型前向传播测试成功")
-except Exception as e:
-    print(f"❌ 模型前向传播测试失败: {e}")
-    raise e
-
-print("✅ 模型配置完成，准备开始训练")
+print("✅ 模型和训练配置完成")

@@ -1,9 +1,13 @@
 # Cell 6: 损失函数和工具类
 
+import torch
+import torch.nn as nn
+from torchvision import transforms
+
 class FocalLoss(nn.Module):
     """焦点损失函数 - 解决类别不平衡问题"""
     
-    def __init__(self, alpha=0.25, gamma=2.5, pos_weight=None, reduction='mean'):
+    def __init__(self, alpha=0.25, gamma=2.0, pos_weight=None, reduction='mean'):
         super(FocalLoss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
@@ -26,6 +30,38 @@ class FocalLoss(nn.Module):
             return focal_loss.sum()
         else:
             return focal_loss
+
+class LabelSmoothingLoss(nn.Module):
+    """标签平滑损失函数"""
+    
+    def __init__(self, smoothing=0.1, pos_weight=None):
+        super(LabelSmoothingLoss, self).__init__()
+        self.smoothing = smoothing
+        self.pos_weight = pos_weight
+    
+    def forward(self, inputs, targets):
+        # 标签平滑
+        targets_smooth = targets * (1 - self.smoothing) + 0.5 * self.smoothing
+        
+        # 使用BCEWithLogitsLoss
+        loss = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight, reduction='mean')(inputs, targets_smooth)
+        return loss
+
+class CombinedLoss(nn.Module):
+    """组合损失函数：Focal Loss + Label Smoothing"""
+    
+    def __init__(self, focal_weight=0.7, smooth_weight=0.3, alpha=0.25, gamma=2.0, 
+                 smoothing=0.1, pos_weight=None):
+        super(CombinedLoss, self).__init__()
+        self.focal_weight = focal_weight
+        self.smooth_weight = smooth_weight
+        self.focal_loss = FocalLoss(alpha=alpha, gamma=gamma, pos_weight=pos_weight)
+        self.smooth_loss = LabelSmoothingLoss(smoothing=smoothing, pos_weight=pos_weight)
+    
+    def forward(self, inputs, targets):
+        focal = self.focal_loss(inputs, targets)
+        smooth = self.smooth_loss(inputs, targets)
+        return self.focal_weight * focal + self.smooth_weight * smooth
 
 class EarlyStopping:
     """早停机制"""
@@ -58,8 +94,8 @@ class EarlyStopping:
     def save_checkpoint(self, model):
         self.best_weights = model.state_dict().copy()
 
-def get_transforms(mode='train', image_size=160):
-    """获取数据变换"""
+def get_transforms(mode='train', image_size=224):
+    """获取优化的数据变换"""
     if mode == 'train':
         return transforms.Compose([
             transforms.ToPILImage(),
@@ -68,6 +104,7 @@ def get_transforms(mode='train', image_size=160):
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             transforms.RandomRotation(degrees=10),
+            transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),  # 添加平移
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             transforms.RandomErasing(p=0.1, scale=(0.02, 0.1))
@@ -79,5 +116,21 @@ def get_transforms(mode='train', image_size=160):
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
+
+def compute_class_weights(dataset):
+    """计算类别权重"""
+    if hasattr(dataset, 'real_count') and hasattr(dataset, 'fake_count'):
+        real_count = dataset.real_count
+        fake_count = dataset.fake_count
+    else:
+        # 回退方案
+        real_count = 1
+        fake_count = 1
+    
+    total = real_count + fake_count
+    weight_real = total / (2 * real_count) if real_count > 0 else 1.0
+    weight_fake = total / (2 * fake_count) if fake_count > 0 else 1.0
+    
+    return torch.tensor([weight_fake / weight_real])  # pos_weight for BCEWithLogitsLoss
 
 print("✅ 损失函数和工具类定义完成")

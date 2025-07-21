@@ -1,13 +1,24 @@
-# Cell 3: GPU加速数据处理模块
+# Cell 3: 数据处理函数
+
+import os
+import cv2
+import numpy as np
+import torch
+import torch.nn.functional as F
+import random
+import pandas as pd
+from tqdm import tqdm
+from sklearn.model_selection import train_test_split
+from torchvision.io import read_video
 
 def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 224),
-                                  quality_threshold=20, use_gpu=True):
-    """GPU加速的帧提取函数"""
+                                  quality_threshold=20, use_gpu=True, use_mtcnn=True):
+    """GPU加速的帧提取函数 - 集成MTCNN人脸检测"""
     try:
         # 检查PyAV是否可用
         if not globals().get('PYAV_AVAILABLE', False):
             print(f"PyAV不可用，使用CPU回退处理: {video_path}")
-            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold)
+            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold, use_mtcnn)
             
         # 使用torchvision的GPU加速视频读取
         if use_gpu and torch.cuda.is_available():
@@ -21,7 +32,7 @@ def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 
             # video_tensor shape: (T, H, W, C)
         except Exception as e:
             print(f"GPU视频读取失败，回退到CPU: {e}")
-            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold)
+            return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold, use_mtcnn)
         
         if video_tensor.size(0) == 0:
             return []
@@ -87,14 +98,132 @@ def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 
         frames_cpu = selected_frames.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
         frames_list = [frame for frame in frames_cpu]
         
+        # 应用MTCNN人脸检测和裁剪
+        if use_mtcnn and globals().get('MTCNN_AVAILABLE', False):
+            frames_list = apply_mtcnn_face_detection(frames_list, target_size)
+        
         return frames_list
         
     except Exception as e:
         print(f"GPU帧提取失败，回退到CPU: {e}")
-        return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold)
+        return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold, use_mtcnn)
 
-def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(224, 224), quality_threshold=20):
-    """CPU回退的帧提取函数"""
+def apply_mtcnn_face_detection(frames, target_size=(224, 224)):
+    """使用MTCNN进行人脸检测和裁剪"""
+    try:
+        detector = MTCNN(min_face_size=40, scale_factor=0.7, steps_threshold=[0.6, 0.7, 0.8])
+        processed_frames = []
+        
+        for frame in frames:
+            # MTCNN需要RGB格式
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if len(frame.shape) == 3 else frame
+            
+            # 检测人脸
+            results = detector.detect_faces(frame_rgb)
+            
+            if results and len(results) > 0:
+                # 选择置信度最高的人脸
+                best_face = max(results, key=lambda x: x['confidence'])
+                
+                if best_face['confidence'] > 0.9:  # 高置信度阈值
+                    # 提取人脸区域
+                    x, y, w, h = best_face['box']
+                    
+                    # 扩展边界框以包含更多上下文
+                    margin = 0.2
+                    x_margin = int(w * margin)
+                    y_margin = int(h * margin)
+                    
+                    x1 = max(0, x - x_margin)
+                    y1 = max(0, y - y_margin)
+                    x2 = min(frame_rgb.shape[1], x + w + x_margin)
+                    y2 = min(frame_rgb.shape[0], y + h + y_margin)
+                    
+                    # 裁剪人脸
+                    face_crop = frame_rgb[y1:y2, x1:x2]
+                    
+                    # 调整大小
+                    face_resized = cv2.resize(face_crop, target_size)
+                    processed_frames.append(face_resized)
+                else:
+                    # 置信度不够，使用原始帧
+                    processed_frames.append(cv2.resize(frame_rgb, target_size))
+            else:
+                # 没有检测到人脸，使用原始帧
+                processed_frames.append(cv2.resize(frame_rgb, target_size))
+        
+        return processed_frames
+        
+    except Exception as e:
+        print(f"MTCNN人脸检测失败，使用原始帧: {e}")
+        return [cv2.resize(frame, target_size) for frame in frames]
+
+def extract_fourier_features(frame):
+    """提取频域特征用于深度伪造检测"""
+    if not globals().get('SCIPY_AVAILABLE', False):
+        return None
+    
+    try:
+        # 转换为灰度图
+        if len(frame.shape) == 3:
+            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = frame
+        
+        # 应用傅里叶变换
+        f_transform = np.fft.fft2(gray)
+        f_shift = np.fft.fftshift(f_transform)
+        
+        # 计算幅度谱
+        magnitude_spectrum = np.log(np.abs(f_shift) + 1)
+        
+        # 提取频域统计特征
+        features = {
+            'mean_magnitude': np.mean(magnitude_spectrum),
+            'std_magnitude': np.std(magnitude_spectrum),
+            'max_magnitude': np.max(magnitude_spectrum),
+            'energy': np.sum(magnitude_spectrum ** 2),
+            'entropy': -np.sum(magnitude_spectrum * np.log(magnitude_spectrum + 1e-10))
+        }
+        
+        return features
+        
+    except Exception as e:
+        print(f"频域特征提取失败: {e}")
+        return None
+
+def analyze_compression_artifacts(frame):
+    """分析压缩伪影特征"""
+    try:
+        # 转换为灰度图
+        if len(frame.shape) == 3:
+            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = frame
+        
+        # DCT变换分析（JPEG压缩伪影）
+        dct = cv2.dct(np.float32(gray))
+        
+        # 计算DCT系数的统计特征
+        features = {
+            'dct_mean': np.mean(dct),
+            'dct_std': np.std(dct),
+            'dct_energy': np.sum(dct ** 2),
+            'high_freq_energy': np.sum(dct[gray.shape[0]//2:, gray.shape[1]//2:] ** 2)
+        }
+        
+        # 边缘检测强度
+        edges = cv2.Canny(gray, 50, 150)
+        features['edge_density'] = np.sum(edges > 0) / edges.size
+        
+        return features
+        
+    except Exception as e:
+        print(f"压缩伪影分析失败: {e}")
+        return None
+
+def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(224, 224), quality_threshold=20, use_mtcnn=True):
+    """CPU回退的帧提取函数 - 集成MTCNN"""
     cap = cv2.VideoCapture(video_path)
     frames = []
 
@@ -142,16 +271,20 @@ def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(224, 224
     while len(frames) < max_frames and len(frames) > 0:
         frames.append(frames[-1].copy())
 
+    # 应用MTCNN人脸检测
+    if use_mtcnn and globals().get('MTCNN_AVAILABLE', False):
+        frames = apply_mtcnn_face_detection(frames, target_size)
+
     return frames[:max_frames]
 
 # 为了向后兼容，保留原函数名
 def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(224, 224),
-                                   quality_threshold=20, skip_frames=3):
-    """兼容性包装函数，优先使用GPU加速"""
-    return extract_frames_gpu_accelerated(video_path, max_frames, target_size, quality_threshold)
+                                   quality_threshold=20, skip_frames=3, use_mtcnn=True):
+    """兼容性包装函数，优先使用GPU加速，集成MTCNN"""
+    return extract_frames_gpu_accelerated(video_path, max_frames, target_size, quality_threshold, use_mtcnn=use_mtcnn)
 
 def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16, max_real=None, max_fake=None):
-    """简化的视频处理函数"""
+    """简化的视频处理函数 - 优化假视频平均分配"""
     # 向后兼容：如果指定了新参数，使用新参数；否则使用旧参数
     if max_real is None:
         max_real = max_videos_per_class
@@ -189,49 +322,94 @@ def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16,
                 print(f"处理视频 {video_file} 时出错: {e}")
                 continue
 
-    # 处理伪造视频 - 改进的均匀采样策略
+    # 处理伪造视频 - 平均分配策略
     print("开始处理伪造视频...")
-    fake_videos_per_method = max_fake // len(fake_methods)  # 每种方法的视频数量
-    remaining_videos = max_fake % len(fake_methods)  # 剩余视频数量
     
-    print(f"每种伪造方法采样 {fake_videos_per_method} 个视频")
-    if remaining_videos > 0:
-        print(f"额外分配 {remaining_videos} 个视频给前几种方法")
+    # 统计每种方法的可用视频数量
+    method_videos = {}
+    total_available_fake = 0
     
-    for i, method in enumerate(fake_methods):
+    for method in fake_methods:
         method_dir = os.path.join(base_data_dir, method)
         if os.path.exists(method_dir):
-            method_videos = [f for f in os.listdir(method_dir) 
-                           if f.endswith(('.mp4', '.avi', '.mov'))]
+            videos = [os.path.join(method_dir, f) for f in os.listdir(method_dir) 
+                     if f.endswith(('.mp4', '.avi', '.mov'))]
+            method_videos[method] = videos
+            total_available_fake += len(videos)
+            print(f"  {method}: {len(videos)} 个视频")
+        else:
+            method_videos[method] = []
+            print(f"  {method}: 目录不存在")
+    
+    print(f"总共可用假视频: {total_available_fake} 个")
+    
+    # 计算每种方法应该采样的视频数量（平均分配）
+    available_methods = [method for method in fake_methods if len(method_videos[method]) > 0]
+    if not available_methods:
+        print("❌ 未找到任何假视频方法")
+        return data_list
+    
+    videos_per_method = max_fake // len(available_methods)
+    remaining_videos = max_fake % len(available_methods)
+    
+    print(f"平均分配策略: 每种方法 {videos_per_method} 个视频")
+    if remaining_videos > 0:
+        print(f"剩余 {remaining_videos} 个视频将分配给前 {remaining_videos} 种方法")
+    
+    # 为每种方法采样视频
+    selected_fake_videos = []
+    for i, method in enumerate(available_methods):
+        # 计算当前方法应该采样的数量
+        current_method_quota = videos_per_method
+        if i < remaining_videos:  # 前几种方法多分配一个
+            current_method_quota += 1
+        
+        available_videos = method_videos[method]
+        
+        # 如果可用视频数量少于配额，全部使用
+        if len(available_videos) <= current_method_quota:
+            method_selected = available_videos
+            print(f"  {method}: 使用全部 {len(method_selected)} 个视频")
+        else:
+            # 随机采样指定数量
+            method_selected = random.sample(available_videos, current_method_quota)
+            print(f"  {method}: 采样 {len(method_selected)} 个视频")
+        
+        selected_fake_videos.extend([(v, method) for v in method_selected])
+    
+    print(f"总共选择 {len(selected_fake_videos)} 个假视频进行处理")
+    
+    # 打乱选择的假视频顺序
+    random.shuffle(selected_fake_videos)
+    
+    # 处理选择的假视频
+    for video_path, method in tqdm(selected_fake_videos, desc="处理伪造视频"):
+        try:
+            frames = extract_frames_memory_efficient(video_path, max_frames)
             
-            # 计算当前方法的视频数量（前几种方法可能多分配1个）
-            current_method_count = fake_videos_per_method
-            if i < remaining_videos:
-                current_method_count += 1
-            
-            # 如果该方法的视频数量超过需要的数量，随机采样
-            if len(method_videos) > current_method_count:
-                method_videos = random.sample(method_videos, current_method_count)
-            
-            print(f"{method}: 找到 {len(method_videos)} 个视频")
-            
-            for video_file in tqdm(method_videos, desc=f"处理{method}"):
-                try:
-                    video_path = os.path.join(method_dir, video_file)
-                    frames = extract_frames_memory_efficient(video_path, max_frames)
-                    
-                    if len(frames) >= max_frames // 2:
-                        data_list.append({
-                            'video_path': video_path,
-                            'frames': frames,
-                            'label': 1,  # 伪造视频
-                            'method': method
-                        })
-                except Exception as e:
-                    print(f"处理视频 {video_file} 时出错: {e}")
-                    continue
+            if len(frames) >= max_frames // 2:
+                data_list.append({
+                    'video_path': video_path,
+                    'frames': frames,
+                    'label': 1,  # 伪造视频
+                    'method': method
+                })
+        except Exception as e:
+            print(f"处理视频 {os.path.basename(video_path)} 时出错: {e}")
+            continue
 
+    # 统计最终结果
+    method_counts = {}
+    for item in data_list:
+        if item['label'] == 1:  # 只统计假视频
+            method = item['method']
+            method_counts[method] = method_counts.get(method, 0) + 1
+    
     print(f"\n✅ 数据处理完成，共处理 {len(data_list)} 个视频")
+    print("假视频方法分布:")
+    for method, count in method_counts.items():
+        print(f"  {method}: {count} 个视频")
+    
     return data_list
 
 def create_dataset_split(data_list, test_size=0.2, val_size=0.1):

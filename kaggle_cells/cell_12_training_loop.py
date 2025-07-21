@@ -1,4 +1,7 @@
-# Cell 12: 训练循环 - Kaggle T4 GPU优化版本
+# Cell 12: 训练循环
+
+import os
+import time
 
 # 确保模型保存目录存在
 os.makedirs('./models', exist_ok=True)
@@ -19,13 +22,15 @@ train_history = {
     'val_loss': [],
     'train_acc': [],
     'val_acc': [],
-    'train_auc': [],
-    'val_auc': []
+    'val_auc': [],
+    'val_precision': [],
+    'val_recall': [],
+    'val_f1': []
 }
+
 best_val_loss = float('inf')
 best_val_acc = 0.0
 best_val_auc = 0.0
-best_model_state = None
 
 # 训练循环
 print("\n🔄 开始训练循环...")
@@ -34,18 +39,36 @@ for epoch in range(num_epochs):
     print(f"\nEpoch {epoch+1}/{num_epochs}")
     
     # 训练阶段
-    train_loss, train_acc, train_auc = train_epoch(model, train_loader, criterion, optimizer, device, scaler)
+    train_results = train_epoch(
+        model, train_loader, criterion, optimizer, device, 
+        scheduler=scheduler, use_amp=True, gradient_clip=1.0
+    )
     
     # 验证阶段
-    val_loss, val_acc, val_auc = validate_epoch(model, val_loader, criterion, device, scaler)
+    val_results = validate_epoch(
+        model, val_loader, criterion, device
+    )
+    
+    # 提取结果
+    train_loss = train_results['loss']
+    train_acc = train_results['accuracy'] * 100
+    
+    val_loss = val_results['loss']
+    val_acc = val_results['accuracy'] * 100
+    val_auc = val_results['auc']
+    val_precision = val_results['precision']
+    val_recall = val_results['recall']
+    val_f1 = val_results['f1']
     
     # 记录历史
     train_history['train_loss'].append(train_loss)
     train_history['train_acc'].append(train_acc)
-    train_history['train_auc'].append(train_auc)
     train_history['val_loss'].append(val_loss)
     train_history['val_acc'].append(val_acc)
     train_history['val_auc'].append(val_auc)
+    train_history['val_precision'].append(val_precision)
+    train_history['val_recall'].append(val_recall)
+    train_history['val_f1'].append(val_f1)
     
     # 学习率调度
     scheduler.step()
@@ -55,22 +78,22 @@ for epoch in range(num_epochs):
     epoch_time = time.time() - epoch_start_time
     
     # 打印结果
-    print(f"训练: Loss={train_loss:.4f}, Acc={train_acc:.2f}%, AUC={train_auc:.4f}")
-    print(f"验证: Loss={val_loss:.4f}, Acc={val_acc:.2f}%, AUC={val_auc:.4f}")
+    print(f"训练: Loss={train_loss:.4f}, Acc={train_acc:.2f}%")
+    print(f"验证: Loss={val_loss:.4f}, Acc={val_acc:.2f}%, AUC={val_auc:.4f}, F1={val_f1:.4f}")
     print(f"学习率: {current_lr:.2e}, 用时: {epoch_time:.1f}s")
     
     # 保存最佳模型
-    if val_loss < best_val_loss:
+    if val_acc > best_val_acc:
         best_val_loss = val_loss
         best_val_acc = val_acc
         best_val_auc = val_auc
-        best_model_state = model.state_dict().copy()
-        print(f"🎯 新的最佳模型! Loss: {best_val_loss:.4f}, Acc: {best_val_acc:.2f}%, AUC: {best_val_auc:.4f}")
         
-        # 保存最佳模型到文件
+        print(f"🎯 新的最佳模型! Acc: {best_val_acc:.2f}%, AUC: {best_val_auc:.4f}")
+        
+        # 保存最佳模型
         torch.save({
             'epoch': epoch,
-            'model_state_dict': best_model_state,
+            'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'best_val_loss': best_val_loss,
             'best_val_acc': best_val_acc,
@@ -90,5 +113,55 @@ for epoch in range(num_epochs):
 
 print("\n✅ 训练完成!")
 print(f"🏆 最终最佳性能: Loss={best_val_loss:.4f}, Acc={best_val_acc:.2f}%, AUC={best_val_auc:.4f}")
+
 if torch.cuda.is_available():
     print(f"💾 峰值GPU内存使用: {torch.cuda.max_memory_allocated() / 1024**3:.1f}GB")
+
+# 绘制训练历史
+def plot_training_history():
+    """绘制训练历史图表"""
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    fig.suptitle('训练历史', fontsize=16, fontweight='bold')
+    
+    # Loss
+    axes[0, 0].plot(train_history['train_loss'], label='训练Loss', color='blue')
+    axes[0, 0].plot(train_history['val_loss'], label='验证Loss', color='red')
+    axes[0, 0].set_title('Loss变化')
+    axes[0, 0].set_xlabel('Epoch')
+    axes[0, 0].set_ylabel('Loss')
+    axes[0, 0].legend()
+    axes[0, 0].grid(True)
+    
+    # Accuracy
+    axes[0, 1].plot(train_history['train_acc'], label='训练Acc', color='blue')
+    axes[0, 1].plot(train_history['val_acc'], label='验证Acc', color='red')
+    axes[0, 1].set_title('准确率变化')
+    axes[0, 1].set_xlabel('Epoch')
+    axes[0, 1].set_ylabel('Accuracy (%)')
+    axes[0, 1].legend()
+    axes[0, 1].grid(True)
+    
+    # AUC
+    axes[1, 0].plot(train_history['val_auc'], label='验证AUC', color='red')
+    axes[1, 0].set_title('AUC变化')
+    axes[1, 0].set_xlabel('Epoch')
+    axes[1, 0].set_ylabel('AUC')
+    axes[1, 0].legend()
+    axes[1, 0].grid(True)
+    
+    # F1 Score
+    axes[1, 1].plot(train_history['val_f1'], label='验证F1', color='red')
+    axes[1, 1].set_title('F1分数变化')
+    axes[1, 1].set_xlabel('Epoch')
+    axes[1, 1].set_ylabel('F1 Score')
+    axes[1, 1].legend()
+    axes[1, 1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('./models/training_history.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+# 绘制训练历史
+plot_training_history()
+
+print("📊 训练历史图表已保存到 ./models/training_history.png")

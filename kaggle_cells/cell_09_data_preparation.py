@@ -14,7 +14,7 @@ if not os.path.exists('./data/train.csv'):
     print("📁 开始数据处理...")
     
     # 调用前面定义的数据处理函数
-    data_list = process_videos_simple(BASE_DATA_DIR, max_real=1000, max_fake=3000, max_frames=16)
+    data_list = process_videos_simple(BASE_DATA_DIR, max_real=600, max_fake=1800, max_frames=16)
     
     if len(data_list) == 0:
         print("❌ 未找到数据，请检查数据路径")

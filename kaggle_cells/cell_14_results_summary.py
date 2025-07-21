@@ -51,10 +51,12 @@ results_summary = {
     'training_history': {
         'train_loss': [float(x) for x in train_history['train_loss']],
         'train_acc': [float(x) for x in train_history['train_acc']],
-        'train_auc': [float(x) for x in train_history['train_auc']],
         'val_loss': [float(x) for x in train_history['val_loss']],
         'val_acc': [float(x) for x in train_history['val_acc']],
-        'val_auc': [float(x) for x in train_history['val_auc']]
+        'val_auc': [float(x) for x in train_history['val_auc']],
+        'val_precision': [float(x) for x in train_history.get('val_precision', [])],
+        'val_recall': [float(x) for x in train_history.get('val_recall', [])],
+        'val_f1': [float(x) for x in train_history.get('val_f1', [])]
     },
     'class_specific_metrics': {
         'real_video_accuracy': float(real_accuracy),

@@ -20,9 +20,9 @@ model = OptimizedDeepfakeDetector(
 print(f"✅ 模型已创建并移动到 {device}")
 print(f"📊 模型参数数量: {sum(p.numel() for p in model.parameters()):,}")
 
-# 优化GPU内存配置
+# 优化GPU内存配置 - 双T4 GPU配置
 if torch.cuda.is_available():
-    torch.cuda.set_per_process_memory_fraction(0.85)  # 提高内存利用率
+    torch.cuda.set_per_process_memory_fraction(0.8)  # 双T4可以使用更多内存
     print(f"🎮 GPU: {torch.cuda.get_device_name(0)}")
     print(f"💾 GPU内存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f}GB")
 
@@ -80,9 +80,9 @@ scheduler = CosineAnnealingWarmRestarts(
     eta_min=1e-6  # 最小学习率
 )
 
-# 早停机制
+# 早停机制 - 双T4 GPU配置
 early_stopping = EarlyStopping(
-    patience=15,  # 增加耐心值
+    patience=8,  # 适中的耐心值，适合双T4训练
     min_delta=0.001,
     restore_best_weights=True
 )
@@ -96,8 +96,8 @@ else:
     scaler = None
     print("📝 使用FP32训练 (兼容性模式)")
 
-# 训练配置
-num_epochs = 50  # 增加训练轮数
+# 训练配置 - 双T4 GPU优化
+num_epochs = 15  # 适中的训练轮数，适合双T4配置
 print(f"🎯 训练配置:")
 print(f"  - 训练轮数: {num_epochs}")
 print(f"  - 初始学习率: {optimizer.param_groups[0]['lr']:.2e}")

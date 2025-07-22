@@ -107,9 +107,20 @@ for epoch in range(num_epochs):
         print(f"\n⏹️ 早停触发，在第 {epoch+1} 轮停止训练")
         break
     
-    # 清理GPU缓存
+    # 清理GPU缓存 - 双T4 GPU内存管理
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        # 检查内存使用情况 - 双T4有更大内存容量
+        memory_used = torch.cuda.memory_allocated() / 1024**3
+        if memory_used > 20:  # 双T4可以使用更多内存，提高阈值到20GB
+            torch.cuda.empty_cache()
+            print(f"⚠️ 内存使用过高 ({memory_used:.1f}GB)，已清理缓存")
+    
+    # 检查训练时间，防止超时 - 双T4可以运行更长时间
+    total_time = time.time() - epoch_start_time
+    if total_time > 7200:  # 双T4可以运行更长时间，提高到2小时
+        print(f"⏰ 训练时间过长 ({total_time/60:.1f}分钟)，提前停止")
+        break
 
 print("\n✅ 训练完成!")
 print(f"🏆 最终最佳性能: Loss={best_val_loss:.4f}, Acc={best_val_acc:.2f}%, AUC={best_val_auc:.4f}")

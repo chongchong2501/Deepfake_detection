@@ -11,49 +11,41 @@ val_transform = None
 print(f"🔧 创建数据集（Kaggle T4优化配置）...")
 print(f"📊 数据类型: FP32 (兼容性优先)")
 
-# 创建数据集 - 禁用GPU预处理以避免多进程冲突
+# 创建数据集 - 双T4 GPU优化配置
 train_dataset = DeepfakeVideoDataset(
     csv_file='./data/train.csv',
     transform=train_transform,
-    max_frames=16,
+    max_frames=12,  # 适中的帧数，平衡性能和内存
     gpu_preprocessing=False,  # 在多进程环境中禁用GPU预处理
     cache_frames=False,  # 避免内存压力
-    extract_fourier=True,  # 启用频域特征提取
-    extract_compression=True  # 启用压缩特征提取
+    extract_fourier=True,  # 重新启用频域特征提取
+    extract_compression=True  # 重新启用压缩特征提取
 )
 
 val_dataset = DeepfakeVideoDataset(
     csv_file='./data/val.csv',
     transform=val_transform,
-    max_frames=16,
+    max_frames=12,  # 适中的帧数，平衡性能和内存
     gpu_preprocessing=False,
     cache_frames=False,
-    extract_fourier=True,  # 启用频域特征提取
-    extract_compression=True  # 启用压缩特征提取
+    extract_fourier=True,  # 重新启用频域特征提取
+    extract_compression=True  # 重新启用压缩特征提取
 )
 
 test_dataset = DeepfakeVideoDataset(
     csv_file='./data/test.csv',
     transform=val_transform,
-    max_frames=16,
+    max_frames=12,  # 适中的帧数，平衡性能和内存
     gpu_preprocessing=False,
     cache_frames=False,
-    extract_fourier=True,  # 启用频域特征提取
-    extract_compression=True  # 启用压缩特征提取
+    extract_fourier=True,  # 重新启用频域特征提取
+    extract_compression=True  # 重新启用压缩特征提取
 )
 
 print(f"📊 数据集大小: 训练={len(train_dataset)}, 验证={len(val_dataset)}, 测试={len(test_dataset)}")
 
-# 优化批次大小配置
-# 动态调整批次大小以最大化GPU利用率
-if torch.cuda.is_available():
-    gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    if gpu_memory_gb >= 14:  # T4 GPU
-        batch_size = 4  # 增加批次大小以提升效率
-    else:
-        batch_size = 2
-else:
-    batch_size = 1
+# 批次大小配置
+batch_size = 2
 
 print(f"使用批次大小: {batch_size} (基于GPU内存自动调整)")
 

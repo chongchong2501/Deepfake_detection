@@ -29,8 +29,8 @@ if torch.cuda.is_available():
     print(f"GPU型号: {gpu_name}")
     print(f"GPU内存: {gpu_memory:.1f} GB")
     
-    # Kaggle T4 GPU优化配置
-    torch.cuda.set_per_process_memory_fraction(0.9)  # 保守内存使用
+    # Kaggle 双T4 GPU优化配置
+    torch.cuda.set_per_process_memory_fraction(0.8)  # 双T4可以使用更多内存
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     

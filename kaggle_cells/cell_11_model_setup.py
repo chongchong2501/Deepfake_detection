@@ -17,6 +17,16 @@ model = OptimizedDeepfakeDetector(
     ensemble_mode=False   # 单模型模式
 ).to(device)
 
+# 多GPU并行支持
+if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+    print(f"🚀 启用多GPU并行训练，使用 {torch.cuda.device_count()} 个GPU")
+    model = nn.DataParallel(model)
+    # 调整批次大小以充分利用多GPU
+    effective_batch_size = batch_size * torch.cuda.device_count()
+    print(f"📦 有效批次大小: {effective_batch_size} (单GPU: {batch_size})")
+else:
+    print("📝 单GPU训练模式")
+
 print(f"✅ 模型已创建并移动到 {device}")
 print(f"📊 模型参数数量: {sum(p.numel() for p in model.parameters()):,}")
 

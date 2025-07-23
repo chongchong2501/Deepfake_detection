@@ -33,16 +33,9 @@ class EnsembleDeepfakeDetector:
         # 初始化MTCNN
         if self.use_mtcnn:
             try:
-                from facenet_pytorch import MTCNN
-                self.mtcnn = MTCNN(
-                    image_size=224,
-                    margin=20,
-                    min_face_size=50,
-                    thresholds=[0.6, 0.7, 0.7],
-                    factor=0.709,
-                    post_process=True,
-                    device=self.device
-                )
+                from mtcnn import MTCNN
+                # 新版本MTCNN构造函数不需要参数
+                self.mtcnn = MTCNN()
                 print("✅ MTCNN人脸检测器初始化成功")
             except Exception as e:
                 print(f"⚠️ MTCNN初始化失败: {e}")
@@ -123,15 +116,41 @@ class EnsembleDeepfakeDetector:
                     # MTCNN人脸检测和裁剪
                     if self.use_mtcnn and self.mtcnn is not None:
                         try:
-                            # 检测人脸
-                            face = self.mtcnn(frame)
-                            if face is not None:
-                                # 转换为numpy数组并调整大小
-                                face_np = face.permute(1, 2, 0).cpu().numpy()
-                                face_np = (face_np * 255).astype(np.uint8)
-                                frame = cv2.resize(face_np, target_size)
+                            # 检测人脸 - 使用新版本API
+                            results = self.mtcnn.detect_faces(
+                                frame,
+                                min_face_size=40,
+                                threshold_pnet=0.6,
+                                threshold_rnet=0.7,
+                                threshold_onet=0.8
+                            )
+                            
+                            if results and len(results) > 0:
+                                # 选择置信度最高的人脸
+                                best_face = max(results, key=lambda x: x['confidence'])
+                                
+                                if best_face['confidence'] > 0.9:
+                                    # 提取人脸区域
+                                    x, y, w, h = best_face['box']
+                                    
+                                    # 扩展边界框
+                                    margin = 0.2
+                                    x_margin = int(w * margin)
+                                    y_margin = int(h * margin)
+                                    
+                                    x1 = max(0, x - x_margin)
+                                    y1 = max(0, y - y_margin)
+                                    x2 = min(frame.shape[1], x + w + x_margin)
+                                    y2 = min(frame.shape[0], y + h + y_margin)
+                                    
+                                    # 裁剪人脸
+                                    face_crop = frame[y1:y2, x1:x2]
+                                    frame = cv2.resize(face_crop, target_size)
+                                else:
+                                    # 置信度不够，使用原始帧
+                                    frame = cv2.resize(frame, target_size)
                             else:
-                                # 如果没有检测到人脸，使用原始帧
+                                # 没有检测到人脸，使用原始帧
                                 frame = cv2.resize(frame, target_size)
                         except Exception as e:
                             print(f"⚠️ MTCNN处理失败: {e}")

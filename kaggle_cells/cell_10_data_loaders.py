@@ -8,6 +8,10 @@ print("📊 创建数据加载器...")
 train_transform = None
 val_transform = None
 
+# 多GPU优化配置
+gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
+is_multi_gpu = gpu_count > 1
+
 print(f"🔧 创建数据集（Kaggle T4优化配置）...")
 print(f"📊 数据类型: FP32 (兼容性优先)")
 
@@ -44,18 +48,24 @@ test_dataset = DeepfakeVideoDataset(
 
 print(f"📊 数据集大小: 训练={len(train_dataset)}, 验证={len(val_dataset)}, 测试={len(test_dataset)}")
 
-# 批次大小配置
-batch_size = 2
+# 批次大小配置 - 根据GPU数量调整
+batch_size = 2  # 基础批次大小
+if is_multi_gpu:
+    print(f"🚀 多GPU模式: {gpu_count} 个GPU")
+    print(f"📦 单GPU批次大小: {batch_size}")
+    print(f"📦 总有效批次大小: {batch_size * gpu_count}")
+else:
+    print(f"📝 单GPU模式")
+    print(f"📦 批次大小: {batch_size}")
 
-print(f"使用批次大小: {batch_size} (基于GPU内存自动调整)")
+# 工作进程数优化
+num_workers = 0  # Kaggle环境使用单进程模式确保稳定性
 
 # 优化数据加载器配置 - 减少worker数量以避免崩溃
 if IS_KAGGLE:
-    num_workers = 0  # Kaggle环境使用单进程避免worker崩溃
     prefetch_factor = None
     persistent_workers = False
 else:
-    num_workers = 0  # 暂时使用单进程模式确保稳定性
     prefetch_factor = None
     persistent_workers = False
 

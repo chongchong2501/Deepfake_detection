@@ -1,5 +1,11 @@
 # Cell 1: 导入库和环境设置
 
+# 抑制CUDA警告信息
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 抑制TensorFlow警告
+os.environ['CUDA_LAUNCH_BLOCKING'] = '0'  # 异步CUDA执行
+os.environ['PYTHONWARNINGS'] = 'ignore'   # 抑制Python警告
+
 # 修复CUDA多进程问题
 import multiprocessing as mp
 try:
@@ -54,9 +60,18 @@ try:
     from mtcnn import MTCNN
     MTCNN_AVAILABLE = True
     print("✅ MTCNN已安装，支持高精度人脸检测")
+    print("   - 人脸检测精度: 高")
+    print("   - 检测置信度阈值: 0.9")
+    print("   - API版本: 新版本 (v1.0.0+)")
 except ImportError:
     MTCNN_AVAILABLE = False
     print("⚠️ MTCNN未安装，将使用OpenCV人脸检测")
+    print("   - 人脸检测精度: 中等")
+    print("   - 建议安装MTCNN以获得更高精度:")
+    print("   - 安装命令: !pip install mtcnn")
+    print("   - 或者: !pip install mtcnn[tensorflow]")
+    print("   - 注意: 需要TensorFlow >= 2.12")
+    print("   - 影响: 人脸检测精度略有降低，但不影响整体训练")
 
 # 视频处理 (PyAV)
 try:

@@ -1,8 +1,5 @@
 # Cell 12: 训练循环
 
-import os
-import time
-
 # 确保模型保存目录存在
 os.makedirs('./models', exist_ok=True)
 

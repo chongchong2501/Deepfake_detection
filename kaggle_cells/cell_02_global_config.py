@@ -1,10 +1,5 @@
 # Cell 2: 全局配置和工具函数 - Kaggle T4 优化版本
 
-import os
-import random
-import numpy as np
-import torch
-
 def set_seed(seed=42):
     """设置随机种子确保可重复性"""
     random.seed(seed)

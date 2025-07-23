@@ -1,12 +1,5 @@
 # Cell 4: 数据集类定义
 
-import os
-import numpy as np
-import torch
-import pandas as pd
-from torch.utils.data import Dataset
-from torchvision import transforms
-
 class DeepfakeVideoDataset(Dataset):
     """深度伪造视频数据集类 - 集成MTCNN和多模态特征"""
     
@@ -129,21 +122,37 @@ class DeepfakeVideoDataset(Dataset):
             if self.transform:
                 try:
                     transformed_frames = []
-                    for frame in video_tensor:
-                        frame_pil = transforms.ToPILImage()(frame)
-                        transformed_frame = self.transform(frame_pil)
-                        transformed_frames.append(transformed_frame)
+                    for frame in frames:  # 直接使用原始numpy帧
+                        # 确保frame是numpy数组且为uint8类型
+                        if isinstance(frame, np.ndarray):
+                            if frame.dtype != np.uint8:
+                                frame = (frame * 255).astype(np.uint8) if frame.max() <= 1.0 else frame.astype(np.uint8)
+                            # 转换为PIL Image
+                            frame_pil = Image.fromarray(frame)
+                            transformed_frame = self.transform(frame_pil)
+                            transformed_frames.append(transformed_frame)
+                        else:
+                            # 如果不是numpy数组，创建默认帧
+                            default_frame = np.zeros((224, 224, 3), dtype=np.uint8)
+                            frame_pil = Image.fromarray(default_frame)
+                            transformed_frame = self.transform(frame_pil)
+                            transformed_frames.append(transformed_frame)
                     video_tensor = torch.stack(transformed_frames)
                 except Exception as e:
                     print(f"⚠️ 数据变换失败，使用原始数据: {e}")
-            
-            # 默认标准化
-            try:
+                    # 回退到原始处理方式，但不再应用标准化（因为transform中已包含）
+                    video_tensor = torch.stack([
+                        torch.from_numpy(frame).permute(2, 0, 1) for frame in frames
+                    ]).float() / 255.0
+                    # 手动应用标准化
+                    mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+                    std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+                    video_tensor = (video_tensor - mean) / std
+            else:
+                # 如果没有变换，应用默认标准化
                 mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
                 std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
                 video_tensor = (video_tensor - mean) / std
-            except Exception as e:
-                print(f"⚠️ 标准化失败: {e}")
 
             label_tensor = torch.tensor(label, dtype=torch.float32)
             

@@ -1,10 +1,5 @@
 # Cell 7: 训练函数 - 集成多任务学习和高级优化策略
 
-import torch
-import torch.nn.functional as F
-from tqdm import tqdm
-import numpy as np
-
 def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=None, 
                 use_amp=False, gradient_clip=1.0, ensemble_mode=False):
     """

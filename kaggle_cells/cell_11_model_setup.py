@@ -1,12 +1,8 @@
 # Cell 11: 模型初始化和训练配置 - Kaggle T4 GPU优化版本
-
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
-from torch.cuda.amp import GradScaler
-
 print("🤖 创建和配置模型...")
+
+# 训练配置参数
+batch_size = 2
 
 # 创建模型 - 针对Kaggle T4 GPU优化
 model = OptimizedDeepfakeDetector(
@@ -38,23 +34,32 @@ if torch.cuda.is_available():
 
 # 损失函数 - 使用类别权重平衡
 # 计算类别权重 - 修复版本
-if hasattr(train_dataset, 'real_count') and hasattr(train_dataset, 'fake_count'):
-    # 使用预计算的统计信息
-    real_count = train_dataset.real_count
-    fake_count = train_dataset.fake_count
-else:
-    # 回退方案：手动计算
-    if hasattr(train_dataset, 'data_list') and train_dataset.data_list is not None:
-        real_count = sum(1 for item in train_dataset.data_list if item['label'] == 0)
-        fake_count = sum(1 for item in train_dataset.data_list if item['label'] == 1)
-    elif hasattr(train_dataset, 'df') and train_dataset.df is not None:
-        real_count = len(train_dataset.df[train_dataset.df['label'] == 0])
-        fake_count = len(train_dataset.df[train_dataset.df['label'] == 1])
+if 'train_loader' in globals() and train_loader is not None:
+    # 从train_loader获取数据集
+    train_dataset = train_loader.dataset
+    
+    if hasattr(train_dataset, 'real_count') and hasattr(train_dataset, 'fake_count'):
+        # 使用预计算的统计信息
+        real_count = train_dataset.real_count
+        fake_count = train_dataset.fake_count
     else:
-        # 默认值
-        real_count = 1
-        fake_count = 1
-        print("⚠️ 无法获取类别分布，使用默认权重")
+        # 回退方案：手动计算
+        if hasattr(train_dataset, 'data_list') and train_dataset.data_list is not None:
+            real_count = sum(1 for item in train_dataset.data_list if item['label'] == 0)
+            fake_count = sum(1 for item in train_dataset.data_list if item['label'] == 1)
+        elif hasattr(train_dataset, 'df') and train_dataset.df is not None:
+            real_count = len(train_dataset.df[train_dataset.df['label'] == 0])
+            fake_count = len(train_dataset.df[train_dataset.df['label'] == 1])
+        else:
+            # 默认值
+            real_count = 1
+            fake_count = 1
+            print("⚠️ 无法获取类别分布，使用默认权重")
+else:
+    # 如果没有train_loader，使用默认值
+    real_count = 1
+    fake_count = 1
+    print("⚠️ train_loader未定义，使用默认类别权重")
 
 # 确保计数不为零
 real_count = max(real_count, 1)
@@ -73,27 +78,27 @@ criterion = FocalLoss(
     reduction='mean'
 )
 
-# 优化器配置 - 使用AdamW和学习率调度
+# 优化器配置 - 降低学习率防止梯度爆炸
 optimizer = optim.AdamW(
     model.parameters(),
-    lr=2e-4,  # 提高初始学习率
-    weight_decay=1e-4,  # 增加权重衰减
+    lr=1e-5,  # 大幅降低学习率，从2e-4降到1e-5
+    weight_decay=0.01,  # 增加权重衰减
     betas=(0.9, 0.999),
     eps=1e-8
 )
 
-# 学习率调度器 - 使用余弦退火
+# 学习率调度器 - 更保守的策略
 scheduler = CosineAnnealingWarmRestarts(
     optimizer,
-    T_0=10,  # 初始重启周期
-    T_mult=2,  # 周期倍增因子
-    eta_min=1e-6  # 最小学习率
+    T_0=5,  # 减少重启周期
+    T_mult=1,  # 周期倍增因子
+    eta_min=1e-7  # 更低的最小学习率
 )
 
-# 早停机制 - 双T4 GPU配置
+# 早停机制 - 更严格的监控
 early_stopping = EarlyStopping(
-    patience=8,  # 适中的耐心值，适合双T4训练
-    min_delta=0.001,
+    patience=5,  # 减少耐心值
+    min_delta=0.001,  # 增加最小改进阈值
     restore_best_weights=True
 )
 

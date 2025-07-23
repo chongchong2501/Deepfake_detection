@@ -1,8 +1,5 @@
 # Cell 13: 模型评估和结果分析
 
-import torch
-import os
-
 print("📊 开始模型评估...")
 print("=" * 60)
 

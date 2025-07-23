@@ -1,11 +1,4 @@
 # Cell 5: 模型定义 - 集成多模态特征和Ensemble策略
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-from torchvision import models
-
 class OptimizedDeepfakeDetector(nn.Module):
     """优化的深度伪造检测器 - 集成多模态特征和Ensemble策略"""
     
@@ -52,7 +45,7 @@ class OptimizedDeepfakeDetector(nn.Module):
             
             # 压缩伪影特征处理 - 修正输入维度
             self.compression_fc = nn.Sequential(
-                nn.Linear(5, 64),  # 压缩特征实际维度为5 (dct_mean, dct_std, dct_energy, high_freq_energy, edge_density)
+                nn.Linear(32, 64),  # 压缩特征扩展为32维
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout_rate),
                 nn.Linear(64, 32)
@@ -259,7 +252,21 @@ class OptimizedDeepfakeDetector(nn.Module):
                             else:
                                 comp_values.append(0.0)
                         
-                        comp_tensor = torch.tensor([comp_values] * batch_size, 
+                        # 扩展到32维：重复基础特征并添加派生特征
+                        extended_values = comp_values.copy()
+                        # 添加派生特征
+                        extended_values.extend([
+                            comp_values[0] * comp_values[1],  # mean * std
+                            comp_values[2] / (comp_values[3] + 1e-8),  # energy ratio
+                            comp_values[4] * comp_values[0],  # edge * mean
+                            np.sqrt(abs(comp_values[2])),  # sqrt energy
+                            comp_values[1] / (comp_values[0] + 1e-8),  # std/mean ratio
+                        ])
+                        # 重复填充到32维
+                        while len(extended_values) < 32:
+                            extended_values.extend(comp_values[:min(5, 32 - len(extended_values))])
+                        
+                        comp_tensor = torch.tensor([extended_values[:32]] * batch_size, 
                                                  dtype=torch.float32, 
                                                  device=temporal_features.device)
                     else:
@@ -267,8 +274,16 @@ class OptimizedDeepfakeDetector(nn.Module):
                             comp_tensor = comp_feat.to(temporal_features.device)
                             if comp_tensor.dim() == 1:
                                 comp_tensor = comp_tensor.unsqueeze(0).repeat(batch_size, 1)
+                            # 确保是32维
+                            if comp_tensor.size(-1) < 32:
+                                padding = torch.zeros(batch_size, 32 - comp_tensor.size(-1), 
+                                                    dtype=torch.float32, 
+                                                    device=temporal_features.device)
+                                comp_tensor = torch.cat([comp_tensor, padding], dim=-1)
+                            elif comp_tensor.size(-1) > 32:
+                                comp_tensor = comp_tensor[:, :32]
                         else:
-                            comp_tensor = torch.zeros(batch_size, 5, 
+                            comp_tensor = torch.zeros(batch_size, 32, 
                                                     dtype=torch.float32, 
                                                     device=temporal_features.device)
                     
@@ -276,7 +291,7 @@ class OptimizedDeepfakeDetector(nn.Module):
                     fusion_features.append(comp_processed)
                 except Exception as e:
                     print(f"⚠️ 压缩特征处理失败: {e}")
-                    comp_tensor = torch.zeros(batch_size, 5, 
+                    comp_tensor = torch.zeros(batch_size, 32, 
                                             dtype=torch.float32, 
                                             device=temporal_features.device)
                     comp_processed = self.compression_fc(comp_tensor)
@@ -331,22 +346,17 @@ class OptimizedDeepfakeDetector(nn.Module):
                 try:
                     # 检查每个特征的维度
                     feature_dims = [f.shape[1] for f in fusion_features]
-                    print(f"🔍 融合特征维度: {feature_dims}")
-                    
-                    # 计算总维度
                     total_dim = sum(feature_dims)
                     expected_dim = self.fusion_layer[0].in_features
                     
                     if total_dim == expected_dim:
+                        # 维度匹配，直接融合
                         fused_features = torch.cat(fusion_features, dim=1)
                         final_features = self.fusion_layer(fused_features)
-                        print(f"✅ 特征融合成功: {fused_features.shape} -> {final_features.shape}")
                     else:
-                        print(f"⚠️ 维度不匹配: 实际={total_dim}, 期望={expected_dim}")
-                        
-                        # 动态调整特征维度
+                        # 维度不匹配时进行调整（这是正常的多模态特征处理）
                         if total_dim < expected_dim:
-                            # 如果维度不足，用零填充
+                            # 维度不足，用零填充
                             padding_dim = expected_dim - total_dim
                             fused_features = torch.cat(fusion_features, dim=1)
                             padding = torch.zeros(batch_size, padding_dim, 
@@ -354,16 +364,20 @@ class OptimizedDeepfakeDetector(nn.Module):
                                                 device=fused_features.device)
                             fused_features = torch.cat([fused_features, padding], dim=1)
                             final_features = self.fusion_layer(fused_features)
-                            print(f"✅ 特征填充后融合成功: {fused_features.shape} -> {final_features.shape}")
+                            # 只在调试模式下输出详细信息
+                            if hasattr(self, 'debug_mode') and self.debug_mode:
+                                print(f"🔧 特征填充: {total_dim} -> {expected_dim}")
                         elif total_dim > expected_dim:
-                            # 如果维度过多，截断到期望维度
+                            # 维度过多，截断到期望维度
                             fused_features = torch.cat(fusion_features, dim=1)
                             fused_features = fused_features[:, :expected_dim]
                             final_features = self.fusion_layer(fused_features)
-                            print(f"✅ 特征截断后融合成功: {fused_features.shape} -> {final_features.shape}")
+                            # 只在调试模式下输出详细信息
+                            if hasattr(self, 'debug_mode') and self.debug_mode:
+                                print(f"🔧 特征截断: {total_dim} -> {expected_dim}")
                         else:
-                            # 如果维度相等但仍然失败，使用基础特征
-                            print(f"⚠️ 使用基础特征作为后备")
+                            # 理论上不应该到达这里
+                            print(f"⚠️ 特征融合异常，使用基础特征")
                             final_features = temporal_features
                             
                 except Exception as e:

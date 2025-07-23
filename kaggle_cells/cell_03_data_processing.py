@@ -1,16 +1,4 @@
 # Cell 3: 数据处理函数
-
-import os
-import cv2
-import numpy as np
-import torch
-import torch.nn.functional as F
-import random
-import pandas as pd
-from tqdm import tqdm
-from sklearn.model_selection import train_test_split
-from torchvision.io import read_video
-
 def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 224),
                                   quality_threshold=20, use_gpu=True, use_mtcnn=True):
     """GPU加速的帧提取函数 - 集成MTCNN人脸检测"""

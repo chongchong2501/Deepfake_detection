@@ -1,15 +1,5 @@
 # Cell 15: 集成推理脚本 - 整合所有优化功能（训练完成后使用）
 
-import torch
-import torch.nn as nn
-import numpy as np
-import cv2
-from pathlib import Path
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-import warnings
-warnings.filterwarnings('ignore')
-
 class EnsembleDeepfakeDetector:
     """集成深度伪造检测器 - 整合所有优化功能"""
     

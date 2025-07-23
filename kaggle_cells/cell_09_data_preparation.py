@@ -1,11 +1,5 @@
 # Cell 9: 数据处理和准备 - 双T4 GPU优化版本
 
-import os
-import pandas as pd
-
-# 确保前面的模块已经执行，函数已经定义
-# 在 Kaggle 环境中，这些函数应该已经通过前面的 cell 定义了
-
 print("📁 数据预处理配置 - 双T4 GPU优化")
 print("  - 真实视频: 1200个样本")
 print("  - 伪造视频: 3600个样本")
@@ -20,7 +14,7 @@ if not os.path.exists('./data/train.csv'):
     print("📁 开始数据处理...")
     
     # 调用前面定义的数据处理函数 - 双T4 GPU优化配置
-    data_list = process_videos_simple(BASE_DATA_DIR, max_real=1200, max_fake=3600, max_frames=12)
+    data_list = process_videos_simple(BASE_DATA_DIR, max_real=1000, max_fake=4000, max_frames=12)
     
     if len(data_list) == 0:
         print("❌ 未找到数据，请检查数据路径")

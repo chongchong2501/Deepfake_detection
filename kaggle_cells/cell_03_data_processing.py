@@ -1,16 +1,4 @@
 # Cell 3: 数据处理函数
-
-import os
-import cv2
-import numpy as np
-import torch
-import torch.nn.functional as F
-import random
-import pandas as pd
-from tqdm import tqdm
-from sklearn.model_selection import train_test_split
-from torchvision.io import read_video
-
 def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 224),
                                   quality_threshold=20, use_gpu=True, use_mtcnn=True):
     """GPU加速的帧提取函数 - 集成MTCNN人脸检测"""
@@ -109,17 +97,24 @@ def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 
         return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold, use_mtcnn)
 
 def apply_mtcnn_face_detection(frames, target_size=(224, 224)):
-    """使用MTCNN进行人脸检测和裁剪"""
+    """使用MTCNN进行人脸检测和裁剪 - 兼容新版本API"""
     try:
-        detector = MTCNN(min_face_size=40, scale_factor=0.7, steps_threshold=[0.6, 0.7, 0.8])
+        # 新版本MTCNN构造函数不需要参数
+        detector = MTCNN()
         processed_frames = []
         
         for frame in frames:
             # MTCNN需要RGB格式
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if len(frame.shape) == 3 else frame
             
-            # 检测人脸
-            results = detector.detect_faces(frame_rgb)
+            # 检测人脸 - 新版本API在detect_faces方法中传递参数
+            results = detector.detect_faces(
+                frame_rgb,
+                min_face_size=40,  # 最小人脸尺寸
+                threshold_pnet=0.6,  # PNet阈值
+                threshold_rnet=0.7,  # RNet阈值  
+                threshold_onet=0.8   # ONet阈值
+            )
             
             if results and len(results) > 0:
                 # 选择置信度最高的人脸

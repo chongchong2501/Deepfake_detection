@@ -13,14 +13,53 @@ def evaluate_model_optimized(model, test_loader, criterion, device):
     print("🚀 开始模型评估...")
     
     with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(tqdm(test_loader, desc="评估进度")):
+        for batch_idx, batch_data in enumerate(tqdm(test_loader, desc="评估进度")):
+            # 处理不同的返回格式：(data, target) 或 (data, target, additional_features)
+            if len(batch_data) == 2:
+                data, target = batch_data
+                additional_features = None
+            elif len(batch_data) == 3:
+                data, target, additional_features = batch_data
+            else:
+                raise ValueError(f"数据加载器返回了意外的数据格式，长度为 {len(batch_data)}")
+            
             data, target = data.to(device), target.to(device)
+            
+            # 处理额外特征的设备转移
+            if additional_features is not None:
+                if isinstance(additional_features, dict):
+                    for key, value in additional_features.items():
+                        if isinstance(value, torch.Tensor):
+                            additional_features[key] = value.to(device)
             
             # 记录推理时间
             start_time = time.time()
-            output, attention_weights = model(data)
+            
+            # 处理模型输出 - 模型可能返回单个张量或字典
+            if additional_features is not None:
+                model_output = model(data, additional_features)
+            else:
+                model_output = model(data)
+            
             inference_time = time.time() - start_time
             inference_times.append(inference_time)
+            
+            # 处理不同的输出格式
+            if isinstance(model_output, dict):
+                # 集成模式，使用ensemble输出
+                output = model_output.get('ensemble', model_output.get('main', list(model_output.values())[0]))
+            else:
+                # 标准模式，直接使用输出
+                output = model_output
+            
+            # 确保输出和目标的维度匹配
+            if output.dim() > 1:
+                output = output.squeeze(-1)  # 将 [batch, 1] 压缩为 [batch]
+            
+            # 确保目标标签是正确的数据类型和维度
+            if target.dim() > 1:
+                target = target.squeeze(-1)  # 将 [batch, 1] 压缩为 [batch]
+            target = target.float()  # 确保是float类型
             
             # 计算损失
             loss = criterion(output, target)

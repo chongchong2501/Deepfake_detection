@@ -1,11 +1,7 @@
 # Cell 6: 损失函数和工具类
 
-import torch
-import torch.nn as nn
-from torchvision import transforms
-
 class FocalLoss(nn.Module):
-    """焦点损失函数 - 解决类别不平衡问题"""
+    """焦点损失函数 - 解决类别不平衡问题（修复版本）"""
     
     def __init__(self, alpha=0.25, gamma=2.0, pos_weight=None, reduction='mean'):
         super(FocalLoss, self).__init__()
@@ -15,14 +11,25 @@ class FocalLoss(nn.Module):
         self.reduction = reduction
 
     def forward(self, inputs, targets):
+        # 添加数值稳定性检查
+        inputs = torch.clamp(inputs, min=-10, max=10)  # 防止极值导致NaN
+        
         # 使用 BCEWithLogitsLoss 以兼容 autocast，支持pos_weight
         ce_loss = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight, reduction='none')(inputs, targets)
+        
+        # 添加数值稳定性
+        ce_loss = torch.clamp(ce_loss, min=1e-8, max=100)
+        
         # 计算概率用于focal weight
         pt = torch.exp(-ce_loss)
+        pt = torch.clamp(pt, min=1e-8, max=1-1e-8)  # 防止极值
         
         # 动态alpha：对于正样本使用alpha，负样本使用(1-alpha)
         alpha_t = self.alpha * targets + (1 - self.alpha) * (1 - targets)
         focal_loss = alpha_t * (1 - pt) ** self.gamma * ce_loss
+        
+        # 检查NaN并替换
+        focal_loss = torch.where(torch.isnan(focal_loss), torch.zeros_like(focal_loss), focal_loss)
 
         if self.reduction == 'mean':
             return focal_loss.mean()
@@ -95,10 +102,9 @@ class EarlyStopping:
         self.best_weights = model.state_dict().copy()
 
 def get_transforms(mode='train', image_size=224):
-    """获取优化的数据变换"""
+    """获取优化的数据变换 """
     if mode == 'train':
         return transforms.Compose([
-            transforms.ToPILImage(),
             transforms.Resize((int(image_size * 1.1), int(image_size * 1.1))),
             transforms.RandomCrop((image_size, image_size)),
             transforms.RandomHorizontalFlip(p=0.5),
@@ -111,7 +117,6 @@ def get_transforms(mode='train', image_size=224):
         ])
     else:
         return transforms.Compose([
-            transforms.ToPILImage(),
             transforms.Resize((image_size, image_size)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])

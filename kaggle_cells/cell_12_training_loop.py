@@ -1,8 +1,5 @@
 # Cell 12: 训练循环
 
-import os
-import time
-
 # 确保模型保存目录存在
 os.makedirs('./models', exist_ok=True)
 
@@ -13,7 +10,12 @@ print(f"💾 设备: {device}")
 print(f"📦 批次大小: {batch_size}")
 
 if torch.cuda.is_available():
-    print(f"🎮 GPU: {torch.cuda.get_device_name(0)}")
+    gpu_count = torch.cuda.device_count()
+    print(f"🎮 GPU数量: {gpu_count}")
+    print(f"🎮 GPU型号: {torch.cuda.get_device_name(0)}")
+    if gpu_count > 1:
+        print(f"🚀 多GPU并行训练模式")
+        print(f"📦 有效批次大小: {batch_size * gpu_count}")
     torch.cuda.reset_peak_memory_stats()
 
 # 训练历史记录
@@ -107,9 +109,30 @@ for epoch in range(num_epochs):
         print(f"\n⏹️ 早停触发，在第 {epoch+1} 轮停止训练")
         break
     
-    # 清理GPU缓存
+    # 清理GPU缓存 - 多GPU内存管理
     if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+        current_memory = torch.cuda.memory_allocated() / 1024**3
+        gpu_count = torch.cuda.device_count()
+        
+        # 多GPU环境下的内存阈值调整
+        memory_threshold = 20 if gpu_count > 1 else 10
+        
+        if current_memory > memory_threshold:
+            print(f"🧹 GPU内存清理: {current_memory:.1f}GB > {memory_threshold}GB")
+            torch.cuda.empty_cache()
+            if gpu_count > 1:
+                # 多GPU环境下清理所有GPU
+                for i in range(gpu_count):
+                    with torch.cuda.device(i):
+                        torch.cuda.empty_cache()
+        
+        # 检查训练时间
+        epoch_time = time.time() - epoch_start_time
+        max_epoch_time = 2 * 3600 if gpu_count > 1 else 1 * 3600  # 多GPU允许更长时间
+        
+        if epoch_time > max_epoch_time:
+            print(f"⏰ 单轮训练时间过长 ({epoch_time/3600:.1f}小时)，停止训练")
+            break
 
 print("\n✅ 训练完成!")
 print(f"🏆 最终最佳性能: Loss={best_val_loss:.4f}, Acc={best_val_acc:.2f}%, AUC={best_val_auc:.4f}")

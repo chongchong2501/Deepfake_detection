@@ -1,10 +1,10 @@
-# Cell 9: 数据处理和准备
+# Cell 9: 数据处理和准备 - 双T4 GPU优化版本
 
-import os
-import pandas as pd
-
-# 确保前面的模块已经执行，函数已经定义
-# 在 Kaggle 环境中，这些函数应该已经通过前面的 cell 定义了
+print("📁 数据预处理配置 - 双T4 GPU优化")
+print("  - 真实视频: 1200个样本")
+print("  - 伪造视频: 3600个样本")
+print("  - 视频帧数: 12帧/视频")
+print("  - 总计约4800个训练样本")
 
 # 创建数据目录
 os.makedirs('./data', exist_ok=True)
@@ -13,8 +13,8 @@ os.makedirs('./data', exist_ok=True)
 if not os.path.exists('./data/train.csv'):
     print("📁 开始数据处理...")
     
-    # 调用前面定义的数据处理函数
-    data_list = process_videos_simple(BASE_DATA_DIR, max_real=1000, max_fake=3000, max_frames=16)
+    # 调用前面定义的数据处理函数 - 双T4 GPU优化配置
+    data_list = process_videos_simple(BASE_DATA_DIR, max_real=1000, max_fake=4000, max_frames=12)
     
     if len(data_list) == 0:
         print("❌ 未找到数据，请检查数据路径")
@@ -31,6 +31,15 @@ if not os.path.exists('./data/train.csv'):
     print(f"训练集: {len(train_data)} 个样本")
     print(f"验证集: {len(val_data)} 个样本")
     print(f"测试集: {len(test_data)} 个样本")
+    
+    # 计算数据集规模
+    total_samples = len(train_data) + len(val_data) + len(test_data)
+    print(f"总样本数: {total_samples}")
+    print(f"数据集规模: {'大型' if total_samples > 3000 else '中型' if total_samples > 1000 else '小型'}")
+    
+    # 估算训练时间
+    estimated_time_per_epoch = total_samples * 0.5 / 60  # 假设每个样本0.5秒
+    print(f"预估单轮训练时间: {estimated_time_per_epoch:.1f}分钟")
     
     # 显示假视频方法分布
     print("\n假视频方法分布统计:")

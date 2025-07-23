@@ -1,10 +1,5 @@
 # Cell 14: 结果保存和总结
 
-import os
-import torch
-import pandas as pd
-from datetime import datetime
-
 print("💾 保存实验结果...")
 print("=" * 60)
 
@@ -21,9 +16,9 @@ results_summary = {
         'early_stopping': True
     },
     'dataset_info': {
-        'train_samples': len(train_dataset),
-        'val_samples': len(val_dataset),
-        'test_samples': len(test_dataset),
+        'train_samples': len(train_loader.dataset) if train_loader else 0,
+        'val_samples': len(val_loader.dataset) if val_loader else 0,
+        'test_samples': len(test_loader.dataset) if test_loader else 0,
         'batch_size': batch_size
     },
     'training_config': {
@@ -51,10 +46,12 @@ results_summary = {
     'training_history': {
         'train_loss': [float(x) for x in train_history['train_loss']],
         'train_acc': [float(x) for x in train_history['train_acc']],
-        'train_auc': [float(x) for x in train_history['train_auc']],
         'val_loss': [float(x) for x in train_history['val_loss']],
         'val_acc': [float(x) for x in train_history['val_acc']],
-        'val_auc': [float(x) for x in train_history['val_auc']]
+        'val_auc': [float(x) for x in train_history['val_auc']],
+        'val_precision': [float(x) for x in train_history.get('val_precision', [])],
+        'val_recall': [float(x) for x in train_history.get('val_recall', [])],
+        'val_f1': [float(x) for x in train_history.get('val_f1', [])]
     },
     'class_specific_metrics': {
         'real_video_accuracy': float(real_accuracy),
@@ -95,9 +92,9 @@ report = f"""
 模型架构: OptimizedDeepfakeDetector (ResNet50 + LSTM + Attention)
 
 数据集信息:
-- 训练样本: {len(train_dataset):,}
-- 验证样本: {len(val_dataset):,}
-- 测试样本: {len(test_dataset):,}
+- 训练样本: {len(train_loader.dataset) if train_loader else 0:,}
+- 验证样本: {len(val_loader.dataset) if val_loader else 0:,}
+- 测试样本: {len(test_loader.dataset) if test_loader else 0:,}
 - 批次大小: {batch_size}
 
 训练配置:
@@ -177,4 +174,4 @@ model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 """)
 
-print("\n✅ Kaggle T4 GPU优化版本 - 训练完成！")
+print("\n✅ 训练完成！")

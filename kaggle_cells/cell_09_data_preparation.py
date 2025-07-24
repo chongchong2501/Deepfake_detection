@@ -1,11 +1,4 @@
 # Cell 9: 数据处理和准备 - 双T4 GPU优化版本
-
-print("📁 数据预处理配置 - 双T4 GPU优化")
-print("  - 真实视频: 1200个样本")
-print("  - 伪造视频: 3600个样本")
-print("  - 视频帧数: 12帧/视频")
-print("  - 总计约4800个训练样本")
-
 # 创建数据目录
 os.makedirs('./data', exist_ok=True)
 
@@ -14,7 +7,7 @@ if not os.path.exists('./data/train.csv'):
     print("📁 开始数据处理...")
     
     # 调用前面定义的数据处理函数 - 双T4 GPU优化配置
-    data_list = process_videos_simple(BASE_DATA_DIR, max_real=1000, max_fake=4000, max_frames=12)
+    data_list = process_videos_simple(BASE_DATA_DIR, max_real=1000, max_fake=1000, max_frames=12)
     
     if len(data_list) == 0:
         print("❌ 未找到数据，请检查数据路径")

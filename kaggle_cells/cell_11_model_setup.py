@@ -4,12 +4,12 @@ print("🤖 创建和配置模型...")
 # 训练配置参数
 batch_size = 2
 
-# 创建模型 - 针对Kaggle T4 GPU优化
+# 创建模型 - 针对Kaggle T4 GPU优化（简化配置解决NaN问题）
 model = OptimizedDeepfakeDetector(
     num_classes=1,
-    dropout_rate=0.3,
+    dropout_rate=0.2,  # 降低dropout率
     use_attention=True,
-    use_multimodal=True,  # 启用多模态特征融合
+    use_multimodal=False,  # 暂时禁用多模态特征融合，避免复杂性导致NaN
     ensemble_mode=False   # 单模型模式
 ).to(device)
 
@@ -78,21 +78,21 @@ criterion = FocalLoss(
     reduction='mean'
 )
 
-# 优化器配置 - 降低学习率防止梯度爆炸
+# 优化器配置 - 使用更安全的学习率避免NaN
 optimizer = optim.AdamW(
     model.parameters(),
-    lr=1e-5,  # 大幅降低学习率，从2e-4降到1e-5
-    weight_decay=0.01,  # 增加权重衰减
+    lr=1e-4,  # 降低学习率到更安全的范围，避免梯度爆炸
+    weight_decay=0.01,
     betas=(0.9, 0.999),
     eps=1e-8
 )
 
-# 学习率调度器 - 更保守的策略
+# 学习率调度器 - 调整为更合理的参数
 scheduler = CosineAnnealingWarmRestarts(
     optimizer,
-    T_0=5,  # 减少重启周期
-    T_mult=1,  # 周期倍增因子
-    eta_min=1e-7  # 更低的最小学习率
+    T_0=3,  # 减少重启周期，让学习率变化更频繁
+    T_mult=2,  # 增加周期倍增因子
+    eta_min=1e-6  # 提高最小学习率，从1e-7提高到1e-6
 )
 
 # 早停机制 - 更严格的监控
@@ -102,14 +102,10 @@ early_stopping = EarlyStopping(
     restore_best_weights=True
 )
 
-# 混合精度训练 - 仅在支持的GPU上启用
-use_amp = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7
-if use_amp:
-    scaler = GradScaler()
-    print("✅ 启用混合精度训练 (AMP)")
-else:
-    scaler = None
-    print("📝 使用FP32训练 (兼容性模式)")
+# 混合精度训练 - 暂时禁用以解决NaN问题
+use_amp = False  # 强制禁用混合精度训练，避免数值不稳定
+scaler = None
+print("📝 使用FP32训练 (解决NaN问题)")
 
 # 训练配置 - 双T4 GPU优化
 num_epochs = 15  # 适中的训练轮数，适合双T4配置

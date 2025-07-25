@@ -130,6 +130,14 @@ class DeepfakeVideoDataset(Dataset):
                             # 转换为PIL Image
                             frame_pil = Image.fromarray(frame)
                             transformed_frame = self.transform(frame_pil)
+                            
+                            # 检查变换后是否有NaN或无穷值
+                            if torch.isnan(transformed_frame).any() or torch.isinf(transformed_frame).any():
+                                print(f"⚠️ 检测到NaN/Inf值，使用默认帧")
+                                default_frame = np.zeros((224, 224, 3), dtype=np.uint8)
+                                frame_pil = Image.fromarray(default_frame)
+                                transformed_frame = self.transform(frame_pil)
+                            
                             transformed_frames.append(transformed_frame)
                         else:
                             # 如果不是numpy数组，创建默认帧
@@ -138,21 +146,34 @@ class DeepfakeVideoDataset(Dataset):
                             transformed_frame = self.transform(frame_pil)
                             transformed_frames.append(transformed_frame)
                     video_tensor = torch.stack(transformed_frames)
+                    
+                    # 最终检查整个视频张量
+                    if torch.isnan(video_tensor).any() or torch.isinf(video_tensor).any():
+                        print(f"⚠️ 视频张量包含NaN/Inf，使用安全的默认处理")
+                        # 回退到原始处理方式
+                        video_tensor = torch.stack([
+                            torch.from_numpy(frame).permute(2, 0, 1) for frame in frames
+                        ]).float() / 255.0
+                        # 手动应用标准化，使用更安全的数值
+                        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+                        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+                        video_tensor = torch.clamp((video_tensor - mean) / std, -10, 10)  # 限制数值范围
+                        
                 except Exception as e:
                     print(f"⚠️ 数据变换失败，使用原始数据: {e}")
                     # 回退到原始处理方式，但不再应用标准化（因为transform中已包含）
                     video_tensor = torch.stack([
                         torch.from_numpy(frame).permute(2, 0, 1) for frame in frames
                     ]).float() / 255.0
-                    # 手动应用标准化
+                    # 手动应用标准化，使用更安全的数值
                     mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
                     std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-                    video_tensor = (video_tensor - mean) / std
+                    video_tensor = torch.clamp((video_tensor - mean) / std, -10, 10)  # 限制数值范围
             else:
-                # 如果没有变换，应用默认标准化
+                # 如果没有变换，应用默认标准化，使用更安全的数值处理
                 mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
                 std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-                video_tensor = (video_tensor - mean) / std
+                video_tensor = torch.clamp((video_tensor - mean) / std, -10, 10)  # 限制数值范围
 
             label_tensor = torch.tensor(label, dtype=torch.float32)
             
@@ -175,17 +196,57 @@ class DeepfakeVideoDataset(Dataset):
             if self.extract_fourier:
                 # 提取频域特征（使用中间帧）
                 mid_frame = frames[len(frames) // 2]
-                fourier_features = extract_fourier_features(mid_frame)
-                if fourier_features:
-                    features['fourier'] = fourier_features
+                try:
+                    # 检查函数是否存在
+                    if 'extract_fourier_features' in globals():
+                        fourier_features = extract_fourier_features(mid_frame)
+                        if fourier_features:
+                            features['fourier'] = fourier_features
+                    else:
+                        # 如果函数不存在，创建简单的频域特征替代
+                        # 使用FFT计算简单的频域统计
+                        gray_frame = np.mean(mid_frame, axis=2)
+                        fft = np.fft.fft2(gray_frame)
+                        fft_magnitude = np.abs(fft)
+                        features['fourier'] = {
+                            'mean_magnitude': float(np.mean(fft_magnitude)),
+                            'std_magnitude': float(np.std(fft_magnitude)),
+                            'max_magnitude': float(np.max(fft_magnitude))
+                        }
+                except Exception as e:
+                    print(f"⚠️ 频域特征提取失败: {e}")
+                    # 跳过频域特征
             
             if self.extract_compression:
                 # 提取压缩伪影特征
                 compression_features = []
                 for frame in frames[::4]:  # 每4帧采样一次
-                    comp_feat = analyze_compression_artifacts(frame)
-                    if comp_feat:
-                        compression_features.append(comp_feat)
+                    try:
+                        # 检查函数是否存在
+                        if 'analyze_compression_artifacts' in globals():
+                            comp_feat = analyze_compression_artifacts(frame)
+                            if comp_feat:
+                                compression_features.append(comp_feat)
+                        else:
+                            # 如果函数不存在，创建简单的压缩特征替代
+                            # 使用DCT和边缘检测的简单实现
+                            gray_frame = np.mean(frame, axis=2)
+                            # 简单的DCT能量计算
+                            dct_energy = float(np.var(gray_frame))
+                            # 简单的边缘密度计算
+                            edges = np.abs(np.gradient(gray_frame.astype(float)))
+                            edge_density = float(np.mean(edges[0]**2 + edges[1]**2))
+                            
+                            comp_feat = {
+                                'dct_energy': dct_energy,
+                                'edge_density': edge_density,
+                                'dct_mean': dct_energy,
+                                'high_freq_energy': dct_energy * 0.1
+                            }
+                            compression_features.append(comp_feat)
+                    except Exception as e:
+                        print(f"⚠️ 压缩特征提取失败: {e}")
+                        continue
                 
                 if compression_features:
                     # 聚合压缩特征 - 使用与模型期望匹配的键名

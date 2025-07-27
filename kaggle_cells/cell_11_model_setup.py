@@ -1,8 +1,8 @@
 # Cell 11: 模型初始化和训练配置 - Kaggle T4 GPU优化版本
 print("🤖 创建和配置模型...")
 
-# 训练配置参数
-batch_size = 2
+# 训练配置参数 - 减少批次大小避免内存问题
+batch_size = 1  # 降低到1避免内存溢出
 
 # 创建模型 - 针对Kaggle T4 GPU优化（简化配置解决NaN问题）
 model = OptimizedDeepfakeDetector(
@@ -26,11 +26,13 @@ else:
 print(f"✅ 模型已创建并移动到 {device}")
 print(f"📊 模型参数数量: {sum(p.numel() for p in model.parameters()):,}")
 
-# 优化GPU内存配置 - 双T4 GPU配置
+# 优化GPU内存配置 - 更保守的内存使用避免OOM
 if torch.cuda.is_available():
-    torch.cuda.set_per_process_memory_fraction(0.8)  # 双T4可以使用更多内存
+    torch.cuda.set_per_process_memory_fraction(0.6)  # 降低到60%避免内存溢出
+    torch.cuda.empty_cache()  # 清理缓存
     print(f"🎮 GPU: {torch.cuda.get_device_name(0)}")
     print(f"💾 GPU内存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f}GB")
+    print(f"🔧 内存使用限制: 60%")
 
 # 损失函数 - 使用类别权重平衡
 # 计算类别权重 - 修复版本

@@ -44,6 +44,16 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
     print(f"   - 混合精度: {'启用' if use_amp else '禁用'}")
     
     for batch_idx, batch_data in enumerate(progress_bar):
+        # 定期清理GPU内存
+        if batch_idx % 10 == 0 and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
+        # 内存监控
+        if batch_idx % 20 == 0 and torch.cuda.is_available():
+            memory_allocated = torch.cuda.memory_allocated() / 1024**3
+            memory_reserved = torch.cuda.memory_reserved() / 1024**3
+            print(f"📊 批次 {batch_idx}: GPU内存 {memory_allocated:.1f}GB / {memory_reserved:.1f}GB")
+        
         # 处理不同的数据格式
         if len(batch_data) == 3:
             # 包含额外特征
@@ -237,12 +247,24 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                     'Acc': f'{accuracy:.4f}'
                 })
             
+            # 每个批次后清理变量
+            del videos, labels
+            if additional_features is not None:
+                del additional_features
+            if 'outputs' in locals():
+                del outputs
+            if 'pred_probs' in locals():
+                del pred_probs
+            
         except Exception as e:
             print(f"⚠️ 训练批次 {batch_idx} 出错: {e}")
             import traceback
             print(f"详细错误信息: {traceback.format_exc()}")
             # 添加调试信息
             print(f"🔍 调试信息 - 当前批次: {batch_idx}, 总样本数: {total_samples}, 总损失: {total_loss}")
+            # 清理GPU内存
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             continue
     
     # 检查是否有有效的训练数据

@@ -134,7 +134,7 @@ if os.path.exists('./data/train.csv') and os.path.exists('./data/val.csv') and o
         train_df=train_df, 
         val_df=val_df, 
         test_df=test_df,
-        batch_size=2,  # 
+        batch_size=1,  # 降低批次大小避免内存问题
         num_workers=0,  # 强制使用单进程模式避免序列化问题
         balance_classes=True,
         oversample_minority=True

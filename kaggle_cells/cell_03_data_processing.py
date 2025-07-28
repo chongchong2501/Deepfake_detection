@@ -397,15 +397,25 @@ def create_dataset_split(data_list, test_size=0.2, val_size=0.1):
     return train_data, val_data, test_data
 
 def save_dataset_to_csv(data_list, filename):
-    """将数据集保存为CSV文件"""
+    """将数据集保存为CSV文件 - 支持预提取帧路径"""
     df_data = []
     for item in data_list:
-        df_data.append({
-            'video_path': item['video_path'],
-            'label': item['label'],
-            'method': item['method'],
-            'num_frames': len(item['frames'])
-        })
+        # 检查是否为预提取的帧数据
+        if 'frame_path' in item:
+            df_data.append({
+                'frame_path': item['frame_path'],  # 预提取的帧路径
+                'label': item['label'],
+                'method': item['method'],
+                'num_frames': item['num_frames']
+            })
+        else:
+            # 向后兼容：原始视频路径格式
+            df_data.append({
+                'video_path': item['video_path'],
+                'label': item['label'],
+                'method': item['method'],
+                'num_frames': len(item['frames'])
+            })
     
     df = pd.DataFrame(df_data)
     df.to_csv(filename, index=False)

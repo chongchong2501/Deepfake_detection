@@ -1,5 +1,7 @@
 # Cell 9: 数据准备 - 三步优化专用版本
 
+DATA_BASE_DIR = '/kaggle/input/ff-c23/FaceForensics++_C23'
+
 print("📁 创建数据目录...")
 os.makedirs('./data', exist_ok=True)
 os.makedirs('./data/frames', exist_ok=True)  # 预提取帧存储目录
@@ -65,6 +67,7 @@ def pre_extract_all_frames(video_data, frames_dir='./data/frames'):
     print(f"✅ 预提取完成: {len(extracted_data)}/{total_videos} 个视频")
     return extracted_data
 
+
 # ==================== 配置参数 ====================
 # 可自定义预处理视频数量
 MAX_REAL_VIDEOS = 500      # 真实视频数量
@@ -89,26 +92,8 @@ print(f"   每视频帧数: {MAX_FRAMES_PER_VIDEO}")
 print(f"   真假比例: {REAL_FAKE_RATIO}")
 print(f"   预计总样本: {MAX_REAL_VIDEOS + MAX_FAKE_VIDEOS}")
 
-# 真假视频比例建议说明
-print(f"\n💡 真假视频比例建议:")
-print(f"   1:1 - 平衡数据集，适合模型训练和评估")
-print(f"   1:2 - 轻微偏向假视频，提高假视频检测敏感度")
-print(f"   1:3 - 中等偏向假视频，适合实际应用场景")
-print(f"   1:6 - 强烈偏向假视频，模拟真实世界中假视频更多的情况")
-print(f"   建议: 初学者使用1:1，实际部署考虑1:3或1:6")
-
-# 处理视频数据 - 包含所有六种假视频类型
-print("🎬 处理视频数据...")
 video_data = process_videos_simple(
-    real_dir='./dataset/FaceForensics++_C23/original',
-    fake_dirs=[
-        './dataset/FaceForensics++_C23/Deepfakes',        # DeepFakes算法
-        './dataset/FaceForensics++_C23/Face2Face',        # Face2Face算法
-        './dataset/FaceForensics++_C23/FaceSwap',         # FaceSwap算法
-        './dataset/FaceForensics++_C23/NeuralTextures',   # NeuralTextures算法
-        './dataset/FaceForensics++_C23/FaceShifter',      # FaceShifter算法
-        './dataset/FaceForensics++_C23/DeepFakeDetection' # DeepFakeDetection算法
-    ],
+    base_data_dir=DATA_BASE_DIR,  # 使用动态检测的数据路径
     max_real=MAX_REAL_VIDEOS,      # 使用自定义真视频数量
     max_fake=MAX_FAKE_VIDEOS,      # 使用自定义假视频数量
     max_frames=MAX_FRAMES_PER_VIDEO
@@ -178,36 +163,6 @@ for item in extracted_data:
 
 for method, count in fake_methods.items():
     print(f"  {method}: {count} 个视频")
-
-# 根据数据集大小提供参数调整建议
-total_samples = real_count + fake_count
-print(f"\n🎯 自动参数调整建议:")
-
-if total_samples < 500:
-    dataset_size = "小型"
-    print(f"   检测到{dataset_size}数据集 ({total_samples}样本)")
-    print(f"   建议在 cell_11_model_setup.py 中调整:")
-    print(f"   - num_epochs = 25-30 (增加训练轮数)")
-    print(f"   - patience = 8-10 (增加早停耐心)")
-    print(f"   - T_0 = 5 (调整学习率调度器)")
-elif total_samples > 1500:
-    dataset_size = "大型"
-    print(f"   检测到{dataset_size}数据集 ({total_samples}样本)")
-    print(f"   建议在 cell_11_model_setup.py 中调整:")
-    print(f"   - num_epochs = 10-12 (减少训练轮数)")
-    print(f"   - patience = 3-4 (减少早停耐心)")
-    print(f"   - T_0 = 3 (调整学习率调度器)")
-    if total_samples > 2000:
-        print(f"   - 考虑在 cell_10_data_loaders.py 中设置 batch_size = 2 (如果GPU内存允许)")
-else:
-    dataset_size = "中型"
-    print(f"   检测到{dataset_size}数据集 ({total_samples}样本)")
-    print(f"   当前参数设置适合此数据集大小，无需调整")
-
-print(f"\n📚 详细配置指南:")
-print(f"   - 参数调整: 查看 PARAMETER_TUNING_GUIDE.md")
-print(f"   - 比例配置: 查看 RATIO_CONFIG_GUIDE.md")
-print(f"   - 六种假视频算法已全部包含，提升模型泛化能力")
 
 print(f"\n✅ 数据准备完成！")
 print(f"   📊 数据分布: 真实视频 {real_count} | 假视频 {fake_count}")

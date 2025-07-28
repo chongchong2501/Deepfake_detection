@@ -248,7 +248,7 @@ def process_videos_simple(base_data_dir, max_videos_per_class=60, max_frames=16,
         max_fake = max_videos_per_class
     
     data_list = []
-    fake_methods = ['Deepfakes', 'Face2Face', 'FaceShifter', 'FaceSwap', 'NeuralTextures']
+    fake_methods = ['Deepfakes', 'Face2Face', 'FaceShifter', 'FaceSwap', 'NeuralTextures', 'DeepFakeDetection']
 
     print("开始处理真实视频...")
     # 处理真实视频

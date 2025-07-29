@@ -1,10 +1,17 @@
 # Cell 4: 数据集类定义
 
+# 必要的导入
+import torch
+import pandas as pd
+import numpy as np
+from torch.utils.data import Dataset
+from PIL import Image
+
 class DeepfakeVideoDataset(Dataset):
     """深度伪造视频数据集类 - 支持预提取帧和多模态特征"""
     
     def __init__(self, csv_file, max_frames=16, gpu_preprocessing=True, 
-                 extract_fourier=True, extract_compression=True):
+                 extract_fourier=True, extract_compression=True, transform=None):
         """
         初始化数据集 - 专用于预提取帧的GPU预处理
         
@@ -14,12 +21,14 @@ class DeepfakeVideoDataset(Dataset):
             gpu_preprocessing: 是否启用GPU预处理
             extract_fourier: 是否提取傅里叶特征
             extract_compression: 是否提取压缩特征
+            transform: 数据变换（可选）
         """
         self.csv_file = csv_file
         self.max_frames = max_frames
         self.gpu_preprocessing = gpu_preprocessing
         self.extract_fourier = extract_fourier
         self.extract_compression = extract_compression
+        self.transform = transform  # 添加transform属性
         
         # 加载数据
         self.df = pd.read_csv(csv_file)
@@ -249,14 +258,18 @@ class DeepfakeVideoDataset(Dataset):
     def _load_preextracted_frames(self, frame_path):
         """从预提取的帧文件加载数据"""
         try:
-            frame_data = torch.load(frame_path, map_location='cpu')
-            frames_tensor = frame_data['frames']  # Shape: (T, C, H, W)
+            # 直接加载tensor（数据准备阶段保存的格式）
+            frames_tensor = torch.load(frame_path, map_location='cpu')
+            
+            # 如果加载的是字典格式，提取frames
+            if isinstance(frames_tensor, dict):
+                frames_tensor = frames_tensor['frames']
             
             # 确保数据类型和范围正确
             if frames_tensor.dtype != torch.float32:
                 frames_tensor = frames_tensor.float()
             
-            # 确保像素值在[0, 255]范围内
+            # 数据准备阶段已经将像素值标准化到[0,1]，这里需要恢复到[0,255]
             if frames_tensor.max() <= 1.0:
                 frames_tensor = frames_tensor * 255.0
             
@@ -353,6 +366,16 @@ class DeepfakeVideoDataset(Dataset):
         
         label_tensor = torch.tensor(0.0, dtype=torch.float32)
         return video_tensor, label_tensor
+
+    def _create_default_frames(self):
+        """创建默认帧数据（numpy格式）"""
+        # 创建随机噪声帧而不是全零帧，使训练更有意义
+        frames = []
+        for _ in range(self.max_frames):
+            # 创建224x224x3的随机帧，值在[0, 50]范围内（低噪声）
+            frame = np.random.randint(0, 50, (224, 224, 3), dtype=np.uint8)
+            frames.append(frame)
+        return frames
 
 
 

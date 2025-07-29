@@ -403,10 +403,10 @@ def save_dataset_to_csv(data_list, filename):
         # 检查是否为预提取的帧数据
         if 'frame_path' in item:
             df_data.append({
-                'frame_path': item['frame_path'],  # 预提取的帧路径
+                'frame_path': item['frame_path'],
                 'label': item['label'],
                 'method': item['method'],
-                'num_frames': item['num_frames']
+                'num_frames': item.get('num_frames', 16)
             })
         else:
             # 向后兼容：原始视频路径格式

@@ -1,14 +1,32 @@
-# Cell 10: 数据加载器 - 三步优化专用版本
+# Cell 11: 数据加载器 - 三步优化专用版本
+
+# 必要的导入
+import torch
+import pandas as pd
+from torch.utils.data import DataLoader, WeightedRandomSampler
+
+# 注意：需要先执行 cell_04_dataset_class.py 来定义 DeepfakeVideoDataset
+# 如果在Jupyter中，DeepfakeVideoDataset 应该已经在之前的cell中定义
+
 def create_data_loaders(batch_size=1, num_workers=0, pin_memory=True):
     """创建数据加载器 - 专用于预提取帧的GPU预处理"""
     
     print("📊 创建数据加载器（三步优化模式）...")
     
+    # GPU预处理配置
+    gpu_preprocessing = True
+    
+    # 重要：当启用GPU预处理时，必须禁用pin_memory
+    # 因为数据已经在GPU上，pin_memory只适用于CPU tensor
+    if gpu_preprocessing:
+        pin_memory = False
+        print("🔧 检测到GPU预处理，自动禁用pin_memory以避免冲突")
+    
     # 创建数据集实例 - 专用于预提取帧
     train_dataset = DeepfakeVideoDataset(
         csv_file='./data/train.csv',
         max_frames=16,
-        gpu_preprocessing=True,  # 启用GPU预处理
+        gpu_preprocessing=gpu_preprocessing,  # 启用GPU预处理
         extract_fourier=True,   # 启用多模态特征
         extract_compression=True
     )
@@ -16,7 +34,7 @@ def create_data_loaders(batch_size=1, num_workers=0, pin_memory=True):
     val_dataset = DeepfakeVideoDataset(
         csv_file='./data/val.csv',
         max_frames=16,
-        gpu_preprocessing=True,  # 启用GPU预处理
+        gpu_preprocessing=gpu_preprocessing,  # 启用GPU预处理
         extract_fourier=True,   # 启用多模态特征
         extract_compression=True
     )
@@ -24,7 +42,7 @@ def create_data_loaders(batch_size=1, num_workers=0, pin_memory=True):
     test_dataset = DeepfakeVideoDataset(
         csv_file='./data/test.csv',
         max_frames=16,
-        gpu_preprocessing=True,  # 启用GPU预处理
+        gpu_preprocessing=gpu_preprocessing,  # 启用GPU预处理
         extract_fourier=True,   # 启用多模态特征
         extract_compression=True
     )
@@ -71,7 +89,7 @@ def create_data_loaders(batch_size=1, num_workers=0, pin_memory=True):
         shuffle=shuffle_train,
         sampler=sampler,
         num_workers=safe_num_workers,
-        pin_memory=pin_memory and torch.cuda.is_available(),
+        pin_memory=pin_memory,  # 已根据GPU预处理自动调整
         drop_last=True,
         persistent_workers=False,
         prefetch_factor=2 if safe_num_workers > 0 else None
@@ -82,7 +100,7 @@ def create_data_loaders(batch_size=1, num_workers=0, pin_memory=True):
         batch_size=batch_size,
         shuffle=False,
         num_workers=safe_num_workers,
-        pin_memory=pin_memory and torch.cuda.is_available(),
+        pin_memory=pin_memory,  # 已根据GPU预处理自动调整
         drop_last=False,
         persistent_workers=False,
         prefetch_factor=2 if safe_num_workers > 0 else None
@@ -93,7 +111,7 @@ def create_data_loaders(batch_size=1, num_workers=0, pin_memory=True):
         batch_size=batch_size,
         shuffle=False,
         num_workers=safe_num_workers,
-        pin_memory=pin_memory and torch.cuda.is_available(),
+        pin_memory=pin_memory,  # 已根据GPU预处理自动调整
         drop_last=False,
         persistent_workers=False,
         prefetch_factor=2 if safe_num_workers > 0 else None
@@ -108,3 +126,11 @@ def create_data_loaders(batch_size=1, num_workers=0, pin_memory=True):
     return train_loader, val_loader, test_loader
 
 print("✅ 数据加载器函数定义完成（三步优化专用）")
+
+# 创建数据加载器实例
+print("\n🚀 创建数据加载器实例...")
+train_loader, val_loader, test_loader = create_data_loaders(
+    batch_size=batch_size,  # 使用之前定义的batch_size
+    num_workers=0,
+    pin_memory=True
+)

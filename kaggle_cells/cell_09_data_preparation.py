@@ -51,11 +51,19 @@ def direct_extract_frames_from_videos(base_data_dir, max_real=500, max_fake=500,
                 
                 # 检查是否已存在
                 if os.path.exists(frame_file):
+                    # 对于已存在的文件，我们需要加载它来获取帧数
+                    try:
+                        existing_frames = torch.load(frame_file)
+                        num_frames = len(existing_frames)
+                    except:
+                        num_frames = max_frames  # 默认值
+                    
                     extracted_data.append({
                         'frame_path': frame_file,
                         'label': 0,
                         'method': 'original',
-                        'original_video': video_path
+                        'original_video': video_path,
+                        'num_frames': num_frames
                     })
                     continue
                 
@@ -75,7 +83,8 @@ def direct_extract_frames_from_videos(base_data_dir, max_real=500, max_fake=500,
                         'frame_path': frame_file,
                         'label': 0,  # 真实视频
                         'method': 'original',
-                        'original_video': video_path
+                        'original_video': video_path,
+                        'num_frames': len(frames)
                     })
                 else:
                     print(f"⚠️ 跳过帧数不足的视频: {video_file}")
@@ -145,11 +154,19 @@ def direct_extract_frames_from_videos(base_data_dir, max_real=500, max_fake=500,
                 
                 # 检查是否已存在
                 if os.path.exists(frame_file):
+                    # 对于已存在的文件，我们需要加载它来获取帧数
+                    try:
+                        existing_frames = torch.load(frame_file)
+                        num_frames = len(existing_frames)
+                    except:
+                        num_frames = max_frames  # 默认值
+                    
                     extracted_data.append({
                         'frame_path': frame_file,
                         'label': 1,
                         'method': method,
-                        'original_video': video_path
+                        'original_video': video_path,
+                        'num_frames': num_frames
                     })
                     continue
                 
@@ -169,7 +186,8 @@ def direct_extract_frames_from_videos(base_data_dir, max_real=500, max_fake=500,
                         'frame_path': frame_file,
                         'label': 1,  # 假视频
                         'method': method,
-                        'original_video': video_path
+                        'original_video': video_path,
+                        'num_frames': len(frames)
                     })
                 else:
                     print(f"⚠️ 跳过帧数不足的视频: {os.path.basename(video_path)}")
@@ -240,10 +258,8 @@ print(f"   假视频: {total_fake} 个")
 print("\n📊 分割数据集...")
 train_data, val_data, test_data = create_dataset_split(
     extracted_data,  # 使用预提取的数据
-    train_ratio=0.7,
-    val_ratio=0.15,
-    test_ratio=0.15,
-    random_state=42
+    test_size=0.15,  # 测试集比例
+    val_size=0.15    # 验证集比例
 )
 
 print(f"训练集: {len(train_data)} 样本")

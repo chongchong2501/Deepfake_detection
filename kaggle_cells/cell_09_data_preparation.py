@@ -5,8 +5,8 @@
 DATA_BASE_DIR = '/kaggle/input/ff-c23/FaceForensics++_C23'
 
 # 可自定义预处理视频数量
-MAX_REAL_VIDEOS = 600      # 真实视频数量
-MAX_FAKE_VIDEOS = 600      # 假视频数量
+MAX_REAL_VIDEOS = 200      # 真实视频数量
+MAX_FAKE_VIDEOS = 400      # 假视频数量
 MAX_FRAMES_PER_VIDEO = 16  # 每个视频提取的帧数
 
 # 真假视频比例建议
@@ -14,7 +14,7 @@ MAX_FRAMES_PER_VIDEO = 16  # 每个视频提取的帧数
 # 1:2 - 轻微偏向假视频，提高假视频检测能力
 # 1:3 - 中等偏向假视频，适合实际应用场景
 # 1:6 - 强烈偏向假视频，模拟真实世界分布
-REAL_FAKE_RATIO = "1:1"  # 当前比例
+REAL_FAKE_RATIO = "1:2"  # 当前比例
 
 def direct_extract_frames_from_videos(base_data_dir, max_real=MAX_REAL_VIDEOS, max_fake=MAX_FAKE_VIDEOS, max_frames=MAX_FRAMES_PER_VIDEO, frames_dir='./data/frames'):
     """

@@ -36,7 +36,24 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
     
     progress_bar = tqdm(train_loader, desc="训练中", leave=False)
     
+    # 添加训练开始的调试信息
+    print(f"🔍 训练开始调试信息:")
+    print(f"   - 数据加载器长度: {len(train_loader)}")
+    print(f"   - 当前学习率: {optimizer.param_groups[0]['lr']:.2e}")
+    print(f"   - 设备: {device}")
+    print(f"   - 混合精度: {'启用' if use_amp else '禁用'}")
+    
     for batch_idx, batch_data in enumerate(progress_bar):
+        # 定期清理GPU内存
+        if batch_idx % 10 == 0 and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
+        # 内存监控
+        if batch_idx % 20 == 0 and torch.cuda.is_available():
+            memory_allocated = torch.cuda.memory_allocated() / 1024**3
+            memory_reserved = torch.cuda.memory_reserved() / 1024**3
+            print(f"📊 批次 {batch_idx}: GPU内存 {memory_allocated:.1f}GB / {memory_reserved:.1f}GB")
+        
         # 处理不同的数据格式
         if len(batch_data) == 3:
             # 包含额外特征
@@ -66,6 +83,17 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                         outputs = model(videos, additional_features)
                     else:
                         outputs = model(videos)
+                    
+                    # 检查模型输出是否包含NaN
+                    if isinstance(outputs, dict):
+                        for key, output in outputs.items():
+                            if torch.isnan(output).any() or torch.isinf(output).any():
+                                print(f"⚠️ 批次 {batch_idx}: 模型输出 {key} 包含NaN/Inf")
+                                raise ValueError(f"Model output {key} contains NaN/Inf")
+                    else:
+                        if torch.isnan(outputs).any() or torch.isinf(outputs).any():
+                            print(f"⚠️ 批次 {batch_idx}: 模型输出包含NaN/Inf")
+                            raise ValueError("Model output contains NaN/Inf")
                     
                     # 计算损失
                     if ensemble_mode and isinstance(outputs, dict):
@@ -101,6 +129,11 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                             outputs = outputs.squeeze(-1)
                         loss = criterion(outputs, labels)
                         pred_probs = torch.sigmoid(outputs)
+                    
+                    # 检查损失是否为NaN
+                    if torch.isnan(loss) or torch.isinf(loss):
+                        print(f"⚠️ 批次 {batch_idx}: 损失为NaN/Inf，跳过此批次")
+                        raise ValueError("Loss is NaN/Inf")
                 
                 # 混合精度反向传播
                 scaler.scale(loss).backward()
@@ -118,6 +151,17 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                     outputs = model(videos, additional_features)
                 else:
                     outputs = model(videos)
+                
+                # 检查模型输出是否包含NaN
+                if isinstance(outputs, dict):
+                    for key, output in outputs.items():
+                        if torch.isnan(output).any() or torch.isinf(output).any():
+                            print(f"⚠️ 批次 {batch_idx}: 模型输出 {key} 包含NaN/Inf")
+                            raise ValueError(f"Model output {key} contains NaN/Inf")
+                else:
+                    if torch.isnan(outputs).any() or torch.isinf(outputs).any():
+                        print(f"⚠️ 批次 {batch_idx}: 模型输出包含NaN/Inf")
+                        raise ValueError("Model output contains NaN/Inf")
                 
                 # 计算损失
                 if ensemble_mode and isinstance(outputs, dict):
@@ -154,6 +198,11 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                     loss = criterion(outputs, labels)
                     pred_probs = torch.sigmoid(outputs)
                 
+                # 检查损失是否为NaN
+                if torch.isnan(loss) or torch.isinf(loss):
+                    print(f"⚠️ 批次 {batch_idx}: 损失为NaN/Inf，跳过此批次")
+                    raise ValueError("Loss is NaN/Inf")
+                
                 loss.backward()
                 
                 # 梯度裁剪
@@ -174,6 +223,14 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
             total_loss += loss.item()
             total_samples += labels.size(0)
             
+            # 添加成功批次的调试信息（仅前3个批次）
+            if batch_idx < 3:
+                print(f"🔍 批次 {batch_idx} 成功:")
+                print(f"   - 损失值: {loss.item():.6f}")
+                print(f"   - 样本数: {labels.size(0)}")
+                print(f"   - 预测概率范围: [{pred_probs.min().item():.4f}, {pred_probs.max().item():.4f}]")
+                print(f"   - 标签分布: {labels.sum().item()}/{labels.size(0)}")
+            
             # 更新进度条
             avg_loss = total_loss / (batch_idx + 1)
             accuracy = correct_predictions / total_samples
@@ -190,10 +247,24 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
                     'Acc': f'{accuracy:.4f}'
                 })
             
+            # 每个批次后清理变量
+            del videos, labels
+            if additional_features is not None:
+                del additional_features
+            if 'outputs' in locals():
+                del outputs
+            if 'pred_probs' in locals():
+                del pred_probs
+            
         except Exception as e:
             print(f"⚠️ 训练批次 {batch_idx} 出错: {e}")
             import traceback
             print(f"详细错误信息: {traceback.format_exc()}")
+            # 添加调试信息
+            print(f"🔍 调试信息 - 当前批次: {batch_idx}, 总样本数: {total_samples}, 总损失: {total_loss}")
+            # 清理GPU内存
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             continue
     
     # 检查是否有有效的训练数据
@@ -215,6 +286,15 @@ def train_epoch(model, train_loader, criterion, optimizer, device, scheduler=Non
     # 返回训练结果
     avg_loss = total_loss / max(len(train_loader), 1)
     accuracy = correct_predictions / max(total_samples, 1)
+    
+    # 添加详细调试信息
+    print(f"🔍 训练结果调试:")
+    print(f"   - 总损失: {total_loss}")
+    print(f"   - 数据加载器长度: {len(train_loader)}")
+    print(f"   - 平均损失: {avg_loss}")
+    print(f"   - 正确预测数: {correct_predictions}")
+    print(f"   - 总样本数: {total_samples}")
+    print(f"   - 准确率: {accuracy}")
     
     results = {
         'loss': avg_loss,

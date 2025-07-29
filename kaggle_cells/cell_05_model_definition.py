@@ -433,13 +433,26 @@ class OptimizedDeepfakeDetector(nn.Module):
             
             # 根据特征维度选择合适的分类器
             if classifier_input_dim and feature_dim == classifier_input_dim:
-                return self.classifier(final_features)
+                logits = self.classifier(final_features)
             elif single_classifier_input_dim and feature_dim == single_classifier_input_dim:
-                return self.single_classifier(final_features)
+                logits = self.single_classifier(final_features)
             else:
                 # 如果都不匹配，尝试使用单一分类器（通常处理基础特征）
                 print(f"⚠️ 特征维度 {feature_dim} 不匹配任何分类器，使用单一分类器")
-                return self.single_classifier(final_features)
+                logits = self.single_classifier(final_features)
+            
+            # 检查输出是否包含NaN或无穷值
+            if torch.isnan(logits).any() or torch.isinf(logits).any():
+                print("⚠️ 模型输出包含NaN/Inf，使用安全的默认输出")
+                # 返回安全的默认输出（中性预测）
+                batch_size = logits.shape[0]
+                device = logits.device
+                logits = torch.zeros(batch_size, 1, device=device, dtype=torch.float32)
+            
+            # 限制logits的数值范围，避免极端值
+            logits = torch.clamp(logits, -10, 10)
+            
+            return logits
 
     def get_attention_weights(self, x):
         """获取注意力权重（用于可视化）"""

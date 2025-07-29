@@ -172,19 +172,55 @@ class EnsembleDeepfakeDetector:
             # 频域特征提取
             if self.extract_fourier and len(frames) > 0:
                 mid_frame = frames[len(frames) // 2]
-                from .cell_03_data_processing import extract_fourier_features
-                fourier_features = extract_fourier_features(mid_frame)
-                if fourier_features:
-                    features['fourier'] = fourier_features
+                try:
+                    # 尝试导入函数，如果不存在则使用简单替代
+                    try:
+                        from .cell_03_data_processing import extract_fourier_features
+                        fourier_features = extract_fourier_features(mid_frame)
+                        if fourier_features:
+                            features['fourier'] = fourier_features
+                    except ImportError:
+                        # 如果函数不存在，创建简单的频域特征替代
+                        gray_frame = np.mean(mid_frame, axis=2)
+                        fft = np.fft.fft2(gray_frame)
+                        fft_magnitude = np.abs(fft)
+                        features['fourier'] = {
+                            'mean_magnitude': float(np.mean(fft_magnitude)),
+                            'std_magnitude': float(np.std(fft_magnitude)),
+                            'max_magnitude': float(np.max(fft_magnitude))
+                        }
+                except Exception as e:
+                    print(f"⚠️ 频域特征提取失败: {e}")
+                    # 跳过频域特征
             
             # 压缩伪影特征提取
             if self.extract_compression and len(frames) > 0:
                 compression_features = []
                 for frame in frames[::4]:  # 每4帧采样一次
-                    from .cell_03_data_processing import analyze_compression_artifacts
-                    comp_feat = analyze_compression_artifacts(frame)
-                    if comp_feat:
-                        compression_features.append(comp_feat)
+                    try:
+                        # 尝试导入函数，如果不存在则使用简单替代
+                        try:
+                            from .cell_03_data_processing import analyze_compression_artifacts
+                            comp_feat = analyze_compression_artifacts(frame)
+                            if comp_feat:
+                                compression_features.append(comp_feat)
+                        except ImportError:
+                            # 如果函数不存在，创建简单的压缩特征替代
+                            gray_frame = np.mean(frame, axis=2)
+                            # 简单的DCT能量计算
+                            dct_energy = float(np.var(gray_frame))
+                            # 简单的边缘密度计算
+                            edges = np.abs(np.gradient(gray_frame.astype(float)))
+                            edge_density = float(np.mean(edges[0]**2 + edges[1]**2))
+                            
+                            comp_feat = {
+                                'dct_energy': dct_energy,
+                                'edge_density': edge_density
+                            }
+                            compression_features.append(comp_feat)
+                    except Exception as e:
+                        print(f"⚠️ 压缩特征提取失败: {e}")
+                        continue
                 
                 if compression_features:
                     features['compression'] = {

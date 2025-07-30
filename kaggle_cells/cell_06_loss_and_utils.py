@@ -101,7 +101,7 @@ class EarlyStopping:
     def save_checkpoint(self, model):
         self.best_weights = model.state_dict().copy()
 
-def get_transforms(mode='train', image_size=224):
+def get_transforms(mode='train', image_size=128):
     """获取优化的数据变换 - 类别平衡增强版本"""
     if mode == 'train':
         return transforms.Compose([

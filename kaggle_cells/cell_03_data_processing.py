@@ -1,5 +1,5 @@
 # Cell 3: 数据处理函数
-def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 224),
+def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(128, 128),
                                   quality_threshold=20, use_gpu=True, use_mtcnn=True):
     """GPU加速的帧提取函数 - 集成MTCNN人脸检测"""
     try:
@@ -97,7 +97,7 @@ def extract_frames_gpu_accelerated(video_path, max_frames=16, target_size=(224, 
         print(f"GPU帧提取失败，回退到CPU: {e}")
         return extract_frames_cpu_fallback(video_path, max_frames, target_size, quality_threshold, use_mtcnn)
 
-def apply_mtcnn_face_detection(frames, target_size=(224, 224)):
+def apply_mtcnn_face_detection(frames, target_size=(128, 128)):
     """使用MTCNN进行人脸检测和裁剪 - 兼容新版本API"""
     try:
         # 新版本MTCNN构造函数不需要参数
@@ -175,7 +175,7 @@ def resize_and_validate_frame(frame, target_size, quality_threshold=20):
     
     return resized_frame
 
-def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(224, 224), quality_threshold=20, use_mtcnn=True):
+def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(128, 128), quality_threshold=20, use_mtcnn=True):
     """CPU回退的帧提取函数 - 集成MTCNN"""
     cap = cv2.VideoCapture(video_path)
     frames = []
@@ -228,7 +228,7 @@ def extract_frames_cpu_fallback(video_path, max_frames=16, target_size=(224, 224
     return frames[:max_frames]
 
 # 为了向后兼容，保留原函数名，但移除冗余参数
-def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(224, 224),
+def extract_frames_memory_efficient(video_path, max_frames=16, target_size=(128, 128),
                                    quality_threshold=20, use_mtcnn=True):
     """兼容性包装函数，优先使用GPU加速，集成MTCNN
     注意：skip_frames参数已移除，因为GPU版本使用更智能的采样策略

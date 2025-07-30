@@ -10,9 +10,9 @@ class OptimizedDeepfakeDetector(nn.Module):
         self.use_multimodal = use_multimodal
         self.ensemble_mode = ensemble_mode
         
-        # 主干网络 - ResNet50
-        self.backbone = models.resnet50(pretrained=True)
-        backbone_features = self.backbone.fc.in_features
+        # 主干网络 - ResNet18 (轻量化模型，更适合小数据集)
+        self.backbone = models.resnet18(pretrained=True)
+        backbone_features = self.backbone.fc.in_features  # ResNet18: 512维特征
         self.backbone.fc = nn.Identity()  # 移除最后的分类层
         
         # 时序特征提取
@@ -60,80 +60,79 @@ class OptimizedDeepfakeDetector(nn.Module):
             )
             
             # 特征融合层 - 动态计算输入维度
-            # 基础特征: backbone_features (2048)
+            # 基础特征: backbone_features (512 for ResNet18)
             # 频域特征: 128 (fourier_fc输出)
             # 压缩特征: 32 (compression_fc输出)  
             # 时序特征: 32 (temporal_fc输出)
-            fusion_dim = backbone_features + 128 + 32 + 32  # 2048 + 128 + 32 + 32 = 2240
+            fusion_dim = backbone_features + 128 + 32 + 32  # 512 + 128 + 32 + 32 = 704
             self.fusion_layer = nn.Sequential(
-                nn.Linear(fusion_dim, 512),
+                nn.Linear(fusion_dim, 256),  # 减少中间层维度
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout_rate),
-                nn.Linear(512, 256)
+                nn.Linear(256, 128)  # 进一步减少输出维度
             )
-            final_features = 256
+            final_features = 128  # 减少最终特征维度
         else:
             final_features = backbone_features
         
         # 集成模式的多个分类头
         if ensemble_mode:
-            # 主分类器
+            # 主分类器 - 简化结构
             self.main_classifier = nn.Sequential(
                 nn.Dropout(dropout_rate),
-                nn.Linear(final_features, 128),
+                nn.Linear(final_features, 64),  # 减少中间层维度
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout_rate),
-                nn.Linear(128, num_classes)
+                nn.Linear(64, num_classes)
             )
             
             # 辅助分类器1 - 专注于空间特征
             self.spatial_classifier = nn.Sequential(
                 nn.Dropout(dropout_rate),
-                nn.Linear(final_features, 64),
+                nn.Linear(final_features, 32),  # 进一步减少维度
                 nn.ReLU(inplace=True),
-                nn.Linear(64, num_classes)
+                nn.Linear(32, num_classes)
             )
             
             # 辅助分类器2 - 专注于时序特征
             self.temporal_classifier = nn.Sequential(
                 nn.Dropout(dropout_rate),
-                nn.Linear(final_features, 64),
+                nn.Linear(final_features, 32),  # 进一步减少维度
                 nn.ReLU(inplace=True),
-                nn.Linear(64, num_classes)
+                nn.Linear(32, num_classes)
             )
             
             # 集成权重（可学习）
             self.ensemble_weights = nn.Parameter(torch.ones(3) / 3)
             
         else:
-            # 单一分类器
+            # 单一分类器 - 简化结构，减少过拟合风险
             self.classifier = nn.Sequential(
                 nn.Dropout(dropout_rate),
-                nn.Linear(final_features, 256),
+                nn.Linear(final_features, 64),  # 大幅减少中间层维度
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout_rate),
-                nn.Linear(256, 128),
-                nn.ReLU(inplace=True),
-                nn.Dropout(dropout_rate),
-                nn.Linear(128, num_classes)
+                nn.Linear(64, num_classes)  # 直接输出，移除多余层
             )
             
             # 添加单一分类器用于处理基础特征（当多模态特征处理失败时）
             self.single_classifier = nn.Sequential(
                 nn.Dropout(dropout_rate),
-                nn.Linear(backbone_features, 128),  # 直接处理backbone特征
+                nn.Linear(backbone_features, 64),  # 减少中间层维度
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout_rate),
-                nn.Linear(128, num_classes)
+                nn.Linear(64, num_classes)
             )
         
         # 初始化权重
         self._initialize_weights()
         
-        print(f"✅ 模型初始化完成")
+        print(f"✅ 模型初始化完成 (ResNet18 轻量化版本)")
+        print(f"   - 主干网络: ResNet18 (512维特征)")
         print(f"   - 注意力机制: {'启用' if use_attention else '禁用'}")
         print(f"   - 多模态融合: {'启用' if use_multimodal else '禁用'}")
         print(f"   - 集成模式: {'启用' if ensemble_mode else '禁用'}")
+        print(f"   - 预计参数量: ~11M (相比ResNet50减少约75%)")
 
     def _initialize_weights(self):
         """初始化权重"""

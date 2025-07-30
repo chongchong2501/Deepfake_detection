@@ -284,7 +284,7 @@ class DeepfakeVideoDataset(Dataset):
     def _create_default_frames_tensor(self):
         """创建默认帧张量"""
         # 创建随机噪声帧而不是全零帧，使训练更有意义
-        frames_tensor = torch.randint(0, 50, (self.max_frames, 3, 224, 224), dtype=torch.float32)
+        frames_tensor = torch.randint(0, 50, (self.max_frames, 3, 128, 128), dtype=torch.float32)
         return frames_tensor
     
     def _ensure_frame_count(self, frames_tensor):
@@ -372,8 +372,8 @@ class DeepfakeVideoDataset(Dataset):
         # 创建随机噪声帧而不是全零帧，使训练更有意义
         frames = []
         for _ in range(self.max_frames):
-            # 创建224x224x3的随机帧，值在[0, 50]范围内（低噪声）
-            frame = np.random.randint(0, 50, (224, 224, 3), dtype=np.uint8)
+            # 创建128x128x3的随机帧，值在[0, 50]范围内（低噪声）
+            frame = np.random.randint(0, 50, (128, 128, 3), dtype=np.uint8)
             frames.append(frame)
         return frames
 

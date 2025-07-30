@@ -4,17 +4,17 @@
 # 数据集路径配置
 DATA_BASE_DIR = '/kaggle/input/ff-c23/FaceForensics++_C23'
 
-# 可自定义预处理视频数量
-MAX_REAL_VIDEOS = 200      # 真实视频数量
-MAX_FAKE_VIDEOS = 400      # 假视频数量
-MAX_FRAMES_PER_VIDEO = 16  # 每个视频提取的帧数
+# 可自定义预处理视频数量 - 简化优化版本
+MAX_REAL_VIDEOS = 100      # 减少真实视频数量，提高训练效率
+MAX_FAKE_VIDEOS = 200      # 减少假视频数量，保持1:2比例
+MAX_FRAMES_PER_VIDEO = 8   # 减少每视频帧数，降低内存使用
 
 # 真假视频比例建议
 # 1:1 - 平衡数据集，适合大多数情况
 # 1:2 - 轻微偏向假视频，提高假视频检测能力
 # 1:3 - 中等偏向假视频，适合实际应用场景
 # 1:6 - 强烈偏向假视频，模拟真实世界分布
-REAL_FAKE_RATIO = "1:2"  # 当前比例
+REAL_FAKE_RATIO = "1:2"  # 保持类别平衡
 
 def direct_extract_frames_from_videos(base_data_dir, max_real=MAX_REAL_VIDEOS, max_fake=MAX_FAKE_VIDEOS, max_frames=MAX_FRAMES_PER_VIDEO, frames_dir='./data/frames'):
     """
@@ -31,6 +31,14 @@ def direct_extract_frames_from_videos(base_data_dir, max_real=MAX_REAL_VIDEOS, m
         extracted_data: 包含预提取帧路径的数据列表
     """
     print(f"🎬 开始直接预提取视频帧到 {frames_dir}...")
+    
+    print(f"📊 简化数据配置:")
+    print(f"  - 真实视频: {max_real}")
+    print(f"  - 假视频: {max_fake}")
+    print(f"  - 每视频帧数: {max_frames}")
+    print(f"  - 真假比例: {REAL_FAKE_RATIO}")
+    print(f"  - 预计总帧数: {(max_real + max_fake) * max_frames}")
+    print(f"  - 优化目标: 提高训练效率，减少内存使用")
     
     # 创建必要的目录
     os.makedirs('./data', exist_ok=True)

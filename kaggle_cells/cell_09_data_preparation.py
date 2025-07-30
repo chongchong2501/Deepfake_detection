@@ -4,17 +4,17 @@
 # 数据集路径配置
 DATA_BASE_DIR = '/kaggle/input/ff-c23/FaceForensics++_C23'
 
-# 可自定义预处理视频数量 - 简化优化版本
-MAX_REAL_VIDEOS = 100      # 减少真实视频数量，提高训练效率
-MAX_FAKE_VIDEOS = 200      # 减少假视频数量，保持1:2比例
+# 可自定义预处理视频数量 - 类别平衡优化版本
+MAX_REAL_VIDEOS = 100      # 真实视频数量
+MAX_FAKE_VIDEOS = 100      # 假视频数量，调整为1:1平衡
 MAX_FRAMES_PER_VIDEO = 8   # 减少每视频帧数，降低内存使用
 
 # 真假视频比例建议
-# 1:1 - 平衡数据集，适合大多数情况
+# 1:1 - 平衡数据集，适合大多数情况 ✅ 当前使用
 # 1:2 - 轻微偏向假视频，提高假视频检测能力
 # 1:3 - 中等偏向假视频，适合实际应用场景
 # 1:6 - 强烈偏向假视频，模拟真实世界分布
-REAL_FAKE_RATIO = "1:2"  # 保持类别平衡
+REAL_FAKE_RATIO = "1:1"  # 完全平衡数据集，解决类别不平衡
 
 def direct_extract_frames_from_videos(base_data_dir, max_real=MAX_REAL_VIDEOS, max_fake=MAX_FAKE_VIDEOS, max_frames=MAX_FRAMES_PER_VIDEO, frames_dir='./data/frames'):
     """

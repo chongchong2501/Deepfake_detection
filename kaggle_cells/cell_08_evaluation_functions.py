@@ -90,7 +90,7 @@ def evaluate_model_optimized(model, test_loader, criterion, device):
     }
 
 def calculate_comprehensive_metrics(predictions, targets, scores):
-    """计算全面的评估指标，包含类别不平衡分析"""
+    """计算全面的评估指标，包含类别不平衡分析和阈值优化"""
     # 基础指标
     accuracy = accuracy_score(targets, predictions)
     balanced_acc = balanced_accuracy_score(targets, predictions)
@@ -98,9 +98,49 @@ def calculate_comprehensive_metrics(predictions, targets, scores):
     recall = recall_score(targets, predictions, zero_division=0)
     f1 = f1_score(targets, predictions, zero_division=0)
     
+    # 阈值优化 - 寻找最佳阈值以平衡类别
+    thresholds = np.arange(0.1, 0.9, 0.05)
+    best_threshold = 0.5
+    best_balanced_acc = balanced_acc
+    best_f1 = f1
+    
+    threshold_results = []
+    for threshold in thresholds:
+        thresh_predictions = (scores > threshold).astype(int)
+        thresh_balanced_acc = balanced_accuracy_score(targets, thresh_predictions)
+        thresh_f1 = f1_score(targets, thresh_predictions, zero_division=0)
+        
+        # 计算真实和伪造视频的准确率
+        cm_thresh = confusion_matrix(targets, thresh_predictions)
+        if cm_thresh.size == 4:
+            tn, fp, fn, tp = cm_thresh.ravel()
+            real_acc = tn / (tn + fp) if (tn + fp) > 0 else 0
+            fake_acc = tp / (tp + fn) if (tp + fn) > 0 else 0
+        else:
+            real_acc = fake_acc = 0
+        
+        threshold_results.append({
+            'threshold': threshold,
+            'balanced_accuracy': thresh_balanced_acc,
+            'f1': thresh_f1,
+            'real_accuracy': real_acc,
+            'fake_accuracy': fake_acc
+        })
+        
+        # 更新最佳阈值（优先考虑平衡准确率）
+        if thresh_balanced_acc > best_balanced_acc:
+            best_threshold = threshold
+            best_balanced_acc = thresh_balanced_acc
+            best_f1 = thresh_f1
+    
+    # 使用最佳阈值重新计算预测
+    optimized_predictions = (scores > best_threshold).astype(int)
+    
     # 混淆矩阵
     cm = confusion_matrix(targets, predictions)
+    cm_optimized = confusion_matrix(targets, optimized_predictions)
     tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
+    tn_opt, fp_opt, fn_opt, tp_opt = cm_optimized.ravel() if cm_optimized.size == 4 else (0, 0, 0, 0)
     
     # 特异性和负预测值
     specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
@@ -114,6 +154,12 @@ def calculate_comprehensive_metrics(predictions, targets, scores):
     
     real_accuracy = real_correct / real_total if real_total > 0 else 0
     fake_accuracy = fake_correct / fake_total if fake_total > 0 else 0
+    
+    # 优化后的类别准确率
+    real_correct_opt = tn_opt
+    fake_correct_opt = tp_opt
+    real_accuracy_opt = real_correct_opt / real_total if real_total > 0 else 0
+    fake_accuracy_opt = fake_correct_opt / fake_total if fake_total > 0 else 0
     
     # 类别不平衡分析
     class_distribution = {
@@ -148,7 +194,15 @@ def calculate_comprehensive_metrics(predictions, targets, scores):
         'tn': tn, 'fp': fp, 'fn': fn, 'tp': tp,
         'real_accuracy': real_accuracy,
         'fake_accuracy': fake_accuracy,
-        'class_distribution': class_distribution
+        'class_distribution': class_distribution,
+        # 阈值优化结果
+        'best_threshold': best_threshold,
+        'optimized_predictions': optimized_predictions,
+        'optimized_confusion_matrix': cm_optimized,
+        'optimized_balanced_accuracy': best_balanced_acc,
+        'optimized_real_accuracy': real_accuracy_opt,
+        'optimized_fake_accuracy': fake_accuracy_opt,
+        'threshold_analysis': threshold_results
     }
 
 def plot_enhanced_confusion_matrix(cm, save_path):

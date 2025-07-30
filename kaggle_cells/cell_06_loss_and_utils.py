@@ -102,18 +102,19 @@ class EarlyStopping:
         self.best_weights = model.state_dict().copy()
 
 def get_transforms(mode='train', image_size=224):
-    """获取优化的数据变换 """
+    """获取优化的数据变换 - 类别平衡增强版本"""
     if mode == 'train':
         return transforms.Compose([
-            transforms.Resize((int(image_size * 1.1), int(image_size * 1.1))),
+            transforms.Resize((int(image_size * 1.15), int(image_size * 1.15))),  # 增加resize比例
             transforms.RandomCrop((image_size, image_size)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-            transforms.RandomRotation(degrees=10),
-            transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),  # 添加平移
+            transforms.RandomHorizontalFlip(p=0.6),  # 增加翻转概率
+            transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.15),  # 增强颜色变换
+            transforms.RandomRotation(degrees=15),  # 增加旋转角度
+            transforms.RandomAffine(degrees=0, translate=(0.15, 0.15), scale=(0.9, 1.1)),  # 增强仿射变换
+            transforms.RandomPerspective(distortion_scale=0.2, p=0.3),  # 添加透视变换
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            transforms.RandomErasing(p=0.1, scale=(0.02, 0.1))
+            transforms.RandomErasing(p=0.15, scale=(0.02, 0.15))  # 增加随机擦除
         ])
     else:
         return transforms.Compose([

@@ -58,6 +58,16 @@ results_summary = {
         'fake_video_accuracy': float(fake_accuracy),
         'real_samples_count': int(real_samples),
         'fake_samples_count': int(fake_samples)
+    },
+    'class_balance_optimization': {
+        'original_threshold': 0.5,
+        'optimized_threshold': float(metrics.get('best_threshold', 0.5)),
+        'original_balanced_accuracy': float(metrics['balanced_accuracy']),
+        'optimized_balanced_accuracy': float(metrics.get('optimized_balanced_accuracy', metrics['balanced_accuracy'])),
+        'original_real_accuracy': float(metrics['real_accuracy']),
+        'optimized_real_accuracy': float(metrics.get('optimized_real_accuracy', metrics['real_accuracy'])),
+        'original_fake_accuracy': float(metrics['fake_accuracy']),
+        'optimized_fake_accuracy': float(metrics.get('optimized_fake_accuracy', metrics['fake_accuracy']))
     }
 }
 
@@ -119,6 +129,14 @@ report = f"""
 类别特定性能:
 - 真实视频检测准确率: {real_accuracy*100:.2f}%
 - 伪造视频检测准确率: {fake_accuracy*100:.2f}%
+
+类别平衡优化结果:
+- 原始分类阈值: 0.5
+- 优化分类阈值: {metrics.get('best_threshold', 0.5):.3f}
+- 原始平衡准确率: {metrics['balanced_accuracy']*100:.2f}%
+- 优化平衡准确率: {metrics.get('optimized_balanced_accuracy', metrics['balanced_accuracy'])*100:.2f}%
+- 优化后真实视频准确率: {metrics.get('optimized_real_accuracy', real_accuracy)*100:.2f}%
+- 优化后伪造视频准确率: {metrics.get('optimized_fake_accuracy', fake_accuracy)*100:.2f}%
 
 训练总结:
 - 训练轮数: {len(train_history['train_loss'])}

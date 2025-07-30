@@ -72,10 +72,10 @@ pos_weight = torch.tensor([real_count / fake_count], device=device)
 print(f"📊 类别分布 - 真实: {real_count}, 伪造: {fake_count}")
 print(f"⚖️ 正样本权重: {pos_weight.item():.2f}")
 
-# 使用FocalLoss处理类别不平衡
+# 使用FocalLoss处理类别不平衡 - 优化版本
 criterion = FocalLoss(
-    alpha=0.25,
-    gamma=2.0,  # 降低gamma值，减少对困难样本的过度关注
+    alpha=0.75,  # 增加alpha值，更多关注真实视频(少数类)
+    gamma=1.5,   # 降低gamma值，减少对困难样本的过度关注
     pos_weight=pos_weight,
     reduction='mean'
 )

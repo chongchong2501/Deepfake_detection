@@ -5,9 +5,9 @@
 DATA_BASE_DIR = '/kaggle/input/ff-c23/FaceForensics++_C23'
 
 # 可自定义预处理视频数量 - 类别平衡优化版本
-MAX_REAL_VIDEOS = 300      # 真实视频数量
-MAX_FAKE_VIDEOS = 300      # 假视频数量，调整为1:1平衡
-MAX_FRAMES_PER_VIDEO = 12   # 减少每视频帧数，降低内存使用
+MAX_REAL_VIDEOS = 600      # 真实视频数量
+MAX_FAKE_VIDEOS = 600      # 假视频数量，调整为1:1平衡
+MAX_FRAMES_PER_VIDEO = 36
 
 # 真假视频比例建议
 # 1:1 - 平衡数据集，适合大多数情况 ✅ 当前使用
